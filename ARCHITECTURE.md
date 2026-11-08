@@ -220,7 +220,7 @@ interface ParamDescriptor {
 
 - **Layout:** top bar, left sidebar (preset library), center (track arrangement), right sidebar (track presets, mute/solo/volume), bottom panel (preset editor or piano roll).
 - **Canvas** is used for the arrangement timeline, automation lanes and the piano roll. Everything else is Svelte components.
-- **Base controls** (knob, slider, toggle, segmented selector) form a small in-house kit that defines the OP-1-inspired look. Design tokens (colors, radii, type) are CSS custom properties.
+- **Base controls** (knob, slider, meter fader, toggle, segmented selector) form a small in-house kit that defines the OP-1-inspired look. Design tokens (colors, radii, type) are CSS custom properties. The theme is **dark by default**; a light theme exists behind `<html data-theme="light">` for a future setting.
 - **Input:**
   - Number keys select tracks 1–9 (or fewer if the project has fewer tracks). Tracks beyond 9 are selected by clicking.
   - A computer-keyboard piano row plays notes.

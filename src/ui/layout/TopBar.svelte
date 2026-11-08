@@ -1,6 +1,6 @@
 <script lang="ts">
   import { setMasterVolume } from '../../model/commands';
-  import Knob from '../controls/Knob.svelte';
+  import MeterFader from '../controls/MeterFader.svelte';
   import { session } from '../state/session.svelte';
 
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -14,8 +14,6 @@
       error: 'Audio unavailable',
     }[session.audioStatus],
   );
-
-  const percent = (v: number) => `${Math.round(v * 100)}%`;
 </script>
 
 <header class="top-bar">
@@ -61,22 +59,15 @@
 
   <div class="spacer"></div>
 
-  <div class="master">
-    <div class="meter" aria-hidden="true">
-      <div class="meter-fill" style:--level={Math.min(1, session.masterPeak)}></div>
-    </div>
-    <Knob
-      label="Master"
-      value={session.project.masterVolume}
-      defaultValue={0.8}
-      color="var(--c-orange)"
-      size={40}
-      format={percent}
-      onstart={() => session.begin('Change master volume')}
-      oninput={(v) => session.run(setMasterVolume(v))}
-      onend={() => session.commit()}
-    />
-  </div>
+  <MeterFader
+    label="Master"
+    value={session.project.masterVolume}
+    level={session.masterPeak}
+    defaultValue={0.8}
+    onstart={() => session.begin('Change master volume')}
+    oninput={(v) => session.run(setMasterVolume(v))}
+    onend={() => session.commit()}
+  />
 </header>
 
 <style>
@@ -84,7 +75,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-4);
-    padding: var(--space-2) var(--space-4);
+    height: 44px;
+    padding: 0 var(--space-4);
     background: var(--panel);
     border-bottom: 1px solid var(--line);
   }
@@ -96,14 +88,14 @@
   }
 
   .dot {
-    width: 10px;
-    height: 10px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
   }
 
   .wordmark {
     margin-left: var(--space-2);
-    font-size: var(--text-l);
+    font-size: var(--text-m);
     font-weight: 800;
     letter-spacing: -0.02em;
   }
@@ -112,7 +104,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    height: 32px;
+    height: 26px;
     padding: 0 var(--space-3);
     border-radius: var(--r-pill);
     background: var(--panel-sunken);
@@ -122,8 +114,8 @@
   }
 
   .led {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: var(--c-grey);
   }
@@ -146,12 +138,21 @@
     gap: var(--space-1);
   }
 
+  /* Compact visually; the ::after keeps the touch target at --hit. */
   .icon-button {
-    width: var(--hit);
-    height: var(--hit);
+    position: relative;
+    width: 30px;
+    height: 30px;
     border-radius: var(--r-s);
     font-size: var(--text-l);
+    line-height: 1;
     color: var(--ink);
+  }
+
+  .icon-button::after {
+    content: '';
+    position: absolute;
+    inset: -5px -2px;
   }
 
   .icon-button:hover:not(:disabled) {
@@ -165,28 +166,5 @@
 
   .spacer {
     flex: 1;
-  }
-
-  .master {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .meter {
-    width: 8px;
-    height: 56px;
-    border-radius: var(--r-pill);
-    background: var(--panel-sunken);
-    overflow: hidden;
-    display: flex;
-    align-items: flex-end;
-  }
-
-  .meter-fill {
-    width: 100%;
-    height: calc(var(--level) * 100%);
-    background: var(--c-green);
-    transition: height 60ms linear;
   }
 </style>

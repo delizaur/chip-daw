@@ -4,7 +4,8 @@
   Same controlled/gesture contract as Knob.
 -->
 <script lang="ts">
-  import { clamp, toNormalized, valueAt, valueForKey, type Scale } from './scale';
+  import { linearRangeHandlers } from './linear-range';
+  import { toNormalized, type Scale } from './scale';
 
   interface Props {
     value: number;
@@ -40,61 +41,23 @@
     onend,
   }: Props = $props();
 
-  const range = $derived({ min, max, step, scale });
   const normalized = $derived(toNormalized(value, min, max, scale));
-  let pointerId: number | null = null;
 
-  function emit(next: number) {
-    if (next !== value) oninput(next);
-  }
-
-  function positionToNormalized(event: PointerEvent, element: HTMLElement): number {
-    const rect = element.getBoundingClientRect();
-    // Keep the thumb under the pointer: the usable track is inset by the thumb radius.
-    const inset = (orientation === 'horizontal' ? rect.height : rect.width) / 2;
-    return orientation === 'horizontal'
-      ? clamp((event.clientX - rect.left - inset) / (rect.width - 2 * inset), 0, 1)
-      : clamp((rect.bottom - event.clientY - inset) / (rect.height - 2 * inset), 0, 1);
-  }
-
-  function onpointerdown(event: PointerEvent) {
-    if (disabled || event.button !== 0) return;
-    event.preventDefault();
-    const element = event.currentTarget as HTMLElement;
-    element.focus();
-    element.setPointerCapture(event.pointerId);
-    pointerId = event.pointerId;
-    onstart?.();
-    emit(valueAt(positionToNormalized(event, element), range));
-  }
-
-  function onpointermove(event: PointerEvent) {
-    if (event.pointerId !== pointerId) return;
-    emit(valueAt(positionToNormalized(event, event.currentTarget as HTMLElement), range));
-  }
-
-  function onpointerup(event: PointerEvent) {
-    if (event.pointerId !== pointerId) return;
-    pointerId = null;
-    onend?.();
-  }
-
-  function ondblclick() {
-    if (disabled) return;
-    onstart?.();
-    emit(defaultValue);
-    onend?.();
-  }
-
-  function onkeydown(event: KeyboardEvent) {
-    if (disabled) return;
-    const next = valueForKey(event.key, event.shiftKey, value, range);
-    if (next === null) return;
-    event.preventDefault();
-    onstart?.();
-    emit(next);
-    onend?.();
-  }
+  const handlers = linearRangeHandlers(() => ({
+    value,
+    min,
+    max,
+    step,
+    scale,
+    defaultValue,
+    disabled,
+    orientation,
+    // Keep the round thumb under the pointer: the usable track is inset by the thumb radius.
+    inset: (rect) => (orientation === 'horizontal' ? rect.height : rect.width) / 2,
+    oninput,
+    onstart,
+    onend,
+  }));
 </script>
 
 <div
@@ -111,12 +74,7 @@
   aria-valuenow={value}
   aria-valuetext={format(value)}
   aria-disabled={disabled}
-  {onpointerdown}
-  {onpointermove}
-  {onpointerup}
-  onpointercancel={onpointerup}
-  {ondblclick}
-  {onkeydown}
+  {...handlers}
 >
   <div class="track">
     <div class="fill"></div>

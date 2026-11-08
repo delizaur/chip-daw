@@ -9,6 +9,7 @@
  *   --prod         build with BASE_PATH=/chip-daw/ and serve via `vite preview` (GitHub Pages layout)
  *   --url <url>    drive an already-running server instead of starting one
  *   --out <dir>    screenshot directory (default: tmp/run-chip-daw)
+ *   --scale <n>    device pixel ratio for screenshots (default: 1; use 2 to inspect details)
  *
  * The dev/preview server runs in-process on a free port and is closed on exit.
  * Browser: $CHROME_PATH, else installed Chrome, else installed Edge.
@@ -70,9 +71,7 @@ function createCommands(page, url, errors) {
   const byRole = (words) =>
     page.getByRole(words[0], { name: words.slice(1).join(' '), exact: true });
   const meter = () =>
-    page
-      .locator('.meter-fill')
-      .evaluate((el) => Number(getComputedStyle(el).getPropertyValue('--level')) || 0);
+    page.locator('.top-bar .meter-fill').evaluate((el) => Number(el.dataset.level) || 0);
 
   return {
     async goto([path = '']) {
@@ -86,15 +85,19 @@ function createCommands(page, url, errors) {
     async press([key]) {
       await page.keyboard.press(key);
     },
-    /** drag <role> <name...> <dy>: vertical pointer drag (knobs). Negative dy = up = increase. */
+    /**
+     * drag <role> <name...> <dx> <dy>: pointer drag starting at the element's center.
+     * Knobs: negative dy (up) increases. Sliders: they jump to the press point first.
+     */
     async drag(words) {
+      const dx = Number(words.at(-2));
       const dy = Number(words.at(-1));
-      const box = await byRole(words.slice(0, -1)).boundingBox();
+      const box = await byRole(words.slice(0, -2)).boundingBox();
       const x = box.x + box.width / 2;
       const y = box.y + box.height / 2;
       await page.mouse.move(x, y);
       await page.mouse.down();
-      for (let i = 1; i <= 10; i++) await page.mouse.move(x, y + (dy * i) / 10);
+      for (let i = 1; i <= 10; i++) await page.mouse.move(x + (dx * i) / 10, y + (dy * i) / 10);
       await page.mouse.up();
     },
     /** attr <attribute> <role> <name...> */
@@ -115,8 +118,9 @@ function createCommands(page, url, errors) {
     async eval(words) {
       return JSON.stringify(await page.evaluate(words.join(' ')));
     },
+    /** theme dark|light: the app is dark by default; light is <html data-theme="light">. */
     async theme([scheme]) {
-      await page.emulateMedia({ colorScheme: scheme });
+      await page.evaluate((s) => (document.documentElement.dataset.theme = s), scheme);
       await page.waitForTimeout(300); // let CSS transitions finish before screenshots
     },
     async viewport([w, h]) {
@@ -128,6 +132,12 @@ function createCommands(page, url, errors) {
     async screenshot([name = 'screenshot']) {
       const path = resolve(OUT, `${name}.png`);
       await page.screenshot({ path });
+      return path;
+    },
+    /** screenshot-element <name> <css selector...>: crop to one element. */
+    async 'screenshot-element'([name, ...selector]) {
+      const path = resolve(OUT, `${name}.png`);
+      await page.locator(selector.join(' ')).first().screenshot({ path });
       return path;
     },
     async errors() {
@@ -165,9 +175,9 @@ async function smoke(c) {
   // square wave 0.25 × volumeToGain(0.8)=0.64 → tanh(0.16) ≈ 0.1586
   check(Math.abs(level - 0.1586) < 0.01, `meter shows test tone (${level.toFixed(4)} ≈ 0.1586)`);
 
-  await c.drag(['slider', 'Master', '-40']);
+  await c.drag(['slider', 'Master', '200', '0']);
   const raised = await c.attr(['aria-valuetext', 'slider', 'Master']);
-  check(raised === '100%', `master knob drag 80% -> ${raised}`);
+  check(raised === '100%', `master fader drag 80% -> ${raised}`);
   check((await c.meter()) > level + 0.05, 'meter rises with master volume');
   check(
     (await c.attr(['title', 'button', 'Undo'])).startsWith('Undo Change master volume'),
@@ -188,8 +198,8 @@ async function smoke(c) {
   );
   await c.screenshot(['2-playing']);
 
-  await c.theme(['dark']);
-  await c.screenshot(['3-dark']);
+  await c.theme(['light']);
+  await c.screenshot(['3-light']);
 
   const errors = await c.errors();
   check(errors === 'none', `no console errors (${errors})`);
@@ -208,7 +218,10 @@ const browser = await launchBrowser();
 let ok = true;
 try {
   const page = await (
-    await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: Number(option('--scale', '1')),
+    })
   ).newPage();
   const errors = [];
   page.on(

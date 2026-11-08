@@ -31,9 +31,9 @@ node .claude/skills/run-chip-daw/driver.mjs smoke
 ```
 
 It checks: audio starts on the first click, the master meter shows the test tone at the expected
-level (≈0.1586), a master-knob drag is one undo step and Ctrl+Z restores it, mute toggles, key `3`
+level (≈0.1586), a master-fader drag is one undo step and Ctrl+Z restores it, mute toggles, key `3`
 selects track 3, and no console errors or HTTP ≥400 responses. Screenshots
-(`1-initial`, `2-playing`, `3-dark`) land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
+(`1-initial`, `2-playing`, `3-light`) land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
 
 Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
 (rebuilds `dist/`):
@@ -52,7 +52,7 @@ click button Play test tone
 wait-text Audio on
 meter
 click radio Triangle
-drag slider Pitch -100
+drag slider Pitch 0 -100
 attr aria-valuetext slider Pitch
 theme dark
 viewport 820 1000
@@ -67,20 +67,21 @@ EOF
 | `goto [path]` | load the app (waits for the Tracks panel) |
 | `click <role> <name…>` | click by ARIA role + exact accessible name, e.g. `click button Mute Track 2` |
 | `press <key>` | keyboard, e.g. `press Control+z`, `press 3` |
-| `drag <role> <name…> <dy>` | vertical pointer drag; negative = up = increase (knobs) |
+| `drag <role> <name…> <dx> <dy>` | pointer drag from the element's center; knobs: negative dy = up = increase |
 | `attr <attribute> <role> <name…>` | print an attribute, e.g. `attr aria-valuetext slider Master` |
 | `wait-text <text…>` | wait up to 10 s for text to appear |
 | `status` | audio status pill text (`Audio off · click to start` / `Audio on`) |
-| `meter` | master meter level 0..1 (after 300 ms settle) |
+| `meter` | master meter level, linear peak 0..1 (after 300 ms settle) |
 | `eval <js…>` | evaluate JS in the page, print JSON |
-| `theme dark\|light` | emulate color scheme (waits for transitions) |
+| `theme dark\|light` | set `<html data-theme>` (dark is the default; waits for transitions) |
 | `viewport <w> <h>` | resize |
 | `sleep <ms>` | wait |
 | `screenshot [name]` | save `tmp/run-chip-daw/<name>.png` |
+| `screenshot-element <name> <css…>` | crop to one element, e.g. `screenshot-element fader .meter-fader` |
 | `errors` | console errors/warnings, page errors and HTTP ≥400 so far, or `none` |
 
 Options: `--prod` (production build), `--url <url>` (drive an already-running server),
-`--out <dir>` (screenshot dir).
+`--out <dir>` (screenshot dir), `--scale 2` (high-DPI screenshots for inspecting details).
 
 Useful names: buttons `Play test tone` / `Stop test tone`, `Undo`, `Redo`, `Mute Track N`,
 `Solo Track N`, `Select Track N`; sliders `Master`, `Pitch`, `Track N volume`; radios `Square`,
@@ -123,15 +124,19 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   Windows path (Vite warns `"base" option should start with a slash`). Use `--prod`, which sets it
   in-process, or prefix `MSYS_NO_PATHCONV=1`.
 - **Theme screenshots catch transitions.** Toggles animate colors for 80 ms; a screenshot right
-  after `emulateMedia` shows washed-out grey buttons. The `theme` command waits 300 ms.
+  after switching theme shows washed-out grey buttons. The `theme` command waits 300 ms.
 - **`drag` on a slider jumps first.** Sliders (track volume) jump to where the pointer lands, so
-  `drag slider Track 1 volume 0` sets ~50%. Knobs move relative to the drag. For exact slider
+  `drag slider Track 1 volume 0 0` sets ~50%, and `drag slider Master 200 0` ends at 100%.
+  Knobs move relative to the drag. For exact slider
   values, focus with a click and use `press ArrowLeft` / `ArrowRight` (1% steps).
+- **Dark is the default theme, regardless of the OS setting.** `emulateMedia({ colorScheme })`
+  does nothing; the light theme is `<html data-theme="light">`, which the `theme` command sets.
 - **Test-tone controls aren't undoable.** Waveform and Pitch are dev-only engine settings, not
   project state, so `Control+z` after changing them does nothing. Use `Master`, track volume,
   mute or solo to test undo.
-- **The meter is a CSS variable.** The level is `--level` on `.meter-fill`, the engine's peak
-  over ~33 ms. The square test tone at default master volume reads 0.25 × 0.8² → tanh → 0.1586.
+- **Reading the meter.** The raw level is `data-level` on `.top-bar .meter-fill` (the engine's
+  linear peak over ~33 ms); the bar itself is drawn on a dB scale. The square test tone at default
+  master volume reads 0.25 × 0.8² → tanh → 0.1586.
 
 ## Troubleshooting
 
