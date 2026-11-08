@@ -186,15 +186,22 @@ interface ParamDescriptor {
 ```
 
 - The UI renders the preset editor (bottom panel) from descriptors, so a new box needs no UI code unless it wants a custom view. Enum params become segmented selectors, everything else a knob.
-- Adding a box: write its descriptor in `src/model/boxes/`, add it to the registry there, and add the engine implementation to `src/engine/boxes/registry.ts`. A test fails if a synth descriptor has no engine implementation.
+- Adding a box: write its descriptor in `src/model/boxes/`, add it to the registry there, and add the engine implementation to `src/engine/boxes/registry.ts`. Tests fail if any descriptor has no engine implementation, or has an invalid range or default.
 - Params missing from a saved box fall back to the descriptor's default, so new params don't need a migration.
 - Every param is automatable, because every param is a number with a known range.
-- Engine-side implementations:
-  - **Sequencer:** note events in → note events out. Has access to transport info (tempo, tick), so an arp can emit notes in the future.
+- Any sequencer or effect can be **bypassed** (`BoxInstance.bypassed`): it's skipped but keeps its settings. The synth can be replaced but not removed or bypassed.
+- Engine-side implementations (`src/engine/boxes/types.ts`), all given a shared `BlockContext` each block (tempo, ticks per sample, and a clock tick: the song position while playing, a free-running clock when stopped, so tempo-synced boxes keep time either way):
+  - **Sequencer:** note events in (`noteOn`/`noteOff` with sample offsets, in time order) → note events out (`render` into a preallocated `BlockEvents`). Chained in order; the last one feeds the synth.
   - **Synth:** note events in → stereo audio out. Owns a preallocated voice pool with voice stealing (`VoicePool`: a free voice, else the oldest releasing one, else the oldest).
-- **Synths so far:**
+  - **Effect:** processes the track's stereo buffer in place, every block (so tails like delay and reverb keep ringing after notes end).
+- **Boxes so far:**
   - `synth.chip` ("Chip"): NES-style pulse (12.5/25/50% duty, PolyBLEP band-limited), 4-bit stepped triangle, and 15-bit LFSR noise in long ("hiss") and short ("metal", pitched to the note) modes. 8 voices, ADSR (linear attack, exponential decay/release), level, transpose, fine tune.
-  - **Effect:** processes a stereo buffer in place.
+  - `seq.arp` ("Arpeggiator"): cycles held notes up, down, up-down, randomly or in played order, over 1–4 octaves, at 1/32–1/4 (with triplets), each note lasting gate × step. Notes pressed at the same moment (a chord) are all in before it starts, so it starts from the first note of the pattern; later steps land on the grid (the song grid while playing). Releasing every key stops it at once. Works on live input and clip notes alike; recording captures the keys you play, not the arp's notes.
+  - `fx.bitcrush` ("Bitcrush"): bit depth 1–16 plus sample-and-hold rate reduction, with dry/wet mix.
+  - `fx.filter` ("Filter"): state-variable low/high/band-pass (Simper/Cytomics SVF), cutoff 30 Hz–18 kHz smoothed per block, resonance.
+  - `fx.delay` ("Delay"): tempo-synced (1/32 to 1/2, dotted and triplet), mono or ping-pong, feedback through a low-pass "tone", wet level added to the dry signal. Up to 4 s.
+  - `fx.reverb` ("Reverb"): Freeverb (8 damped combs + 4 allpasses per channel, stereo spread), size, damping, width, wet level added to the dry signal.
+- **Chain changes and notes:** when the set of active sequencers changes (one added, removed, moved or bypassed), the track releases all its notes and resets its sequencers, so notes started through the old path can't get stuck. Boxes that stay keep their runtime and state (a reverb tail survives a knob change or reorder).
 
 ## Engine
 
@@ -206,7 +213,7 @@ interface ParamDescriptor {
 - **Clip playback:** each track flattens its clips into note-ons sorted by tick (rebuilt when its clips change, resuming from the current position). Each playing pitch remembers its own end tick, so editing a clip mid-note can't leave a stuck note. Notes that started before the play position aren't "chased" (they don't sound until their next start).
 - **Recording:** live notes are stamped with the position minus the output latency (what the player was hearing), streamed to the UI as they're played (the timeline draws them live in the red recording region), then sent as a take when the pass ends. The UI turns it into clips with one undoable command: one clip per track, spanning exactly from where recording started to where it stopped (stretched only to fit notes played just before the start). It is not rounded to bars, so stopping mid-bar never replaces material you didn't record over. Without overdub it replaces what was underneath; with overdub it merges with the clips it overlaps.
 - **Metronome:** a short square blip on every beat while playing, accented on the downbeat. It's mixed straight into the master, not part of any track.
-- **Signal flow per track:** active segment(s) → sequencer chain → synth voices → effect chain → track volume/mute/solo → master bus → master volume → soft clipper.
+- **Signal flow per track:** clip notes and live notes → sequencer chain (non-bypassed) → synth voices → effect chain (non-bypassed) → track volume/mute/solo → master bus → master volume → soft clipper. Live notes go to the first active sequencer, or straight to the synth when there is none.
 - **Real-time rules:**
   - No allocation inside `process()`: voices, buffers and event queues are preallocated.
   - Allocation is allowed only when the structure changes (box added, project loaded), never per block.

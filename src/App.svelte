@@ -69,7 +69,7 @@
   });
 </script>
 
-<div class="app" style:--bottom-height={session.bottomTab === 'pianoRoll' ? '380px' : '250px'}>
+<div class="app" style:--bottom-height={session.bottomTab === 'pianoRoll' ? '380px' : '300px'}>
   <div class="top"><TopBar /></div>
   <div class="left"><LeftSidebar /></div>
   <div class="center"><Arrangement /></div>

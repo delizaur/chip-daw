@@ -15,8 +15,11 @@ export interface ParamDescriptor {
    * Present only for enum params, which the UI shows as a segmented selector.
    */
   steps?: string[];
-  /** For display: 's' (seconds), '%' (0..1 shown as percent), 'st' (semitones), 'ct' (cents). */
-  unit?: 's' | '%' | 'st' | 'ct';
+  /**
+   * For display: 's' (seconds), '%' (0..1 shown as percent), 'st' (semitones), 'ct' (cents),
+   * 'Hz' (frequency).
+   */
+  unit?: 's' | '%' | 'st' | 'ct' | 'Hz';
 }
 
 /**

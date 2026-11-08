@@ -30,8 +30,12 @@ function checkBox(value: unknown, path: string): void {
   requireString(value.id, `${path}.id`);
   requireString(value.type, `${path}.type`);
   if (!isObject(value.params)) fail(`${path}.params`, 'a set of parameters');
-  for (const [key, param] of Object.entries(value.params))
+  for (const [key, param] of Object.entries(value.params)) {
     requireNumber(param, `${path}.params.${key}`);
+  }
+  if (value.bypassed !== undefined && typeof value.bypassed !== 'boolean') {
+    fail(`${path}.bypassed`, 'true or false');
+  }
 }
 
 /**

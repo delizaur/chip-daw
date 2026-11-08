@@ -28,9 +28,9 @@ Each phase ends with something usable. Data structures for later features (walls
 - [x] Project import/export (`.chip`) + IndexedDB autosave/restore
 
 ## Phase 3: Preset pipeline
-- [ ] Full box chain: sequencers → synth → effects, added, removed, reordered and replaced from a list
-- [ ] Sequencer: arpeggiator (plus quantize / note-length style helpers)
-- [ ] Effects: bitcrush/sample-rate reduction, filter, delay, reverb
+- [x] Full box chain: sequencers → synth → effects, added, removed, reordered, replaced and bypassed
+- [x] Sequencer: arpeggiator (more note helpers, e.g. chord or note-length, can follow later)
+- [x] Effects: bitcrush/sample-rate reduction, filter, delay, reverb
 - [ ] Left sidebar preset library: folders, copy, rename, delete (IndexedDB)
 - [ ] Assign library presets to tracks (deep copy); preset import/export (`.chippreset`)
 - [ ] WAV export via offline render in a Worker

@@ -5,6 +5,7 @@ import { bpmAt, ticksPerBar, ticksPerBeat, ticksPerSecond } from '../model/time'
 import { SmoothedValue, softClip, volumeToGain } from './dsp';
 import { Metronome } from './metronome';
 import type { EngineToUi, UiToEngine } from './protocol';
+import type { BlockContext } from './boxes/types';
 import { TrackRuntime, type PlayWindow } from './track';
 
 enablePatches();
@@ -45,6 +46,10 @@ export class Engine {
   #latencySeconds = 0;
   #take: Take | null = null;
   readonly #window: PlayWindow = { start: 0, end: 0, ticksPerSample: 0 };
+  /** Shared with every box each block (mutated, never reallocated). */
+  readonly #context: BlockContext = { bpm: 120, clockTick: 0, ticksPerSample: 0, playing: false };
+  /** Free-running clock for tempo-synced boxes (arp, delay) while the transport is stopped. */
+  #freeTick: Tick = 0;
 
   // Reporting
   readonly #reportInterval: number;
@@ -245,15 +250,23 @@ export class Engine {
     mixRight.fill(0, 0, frames);
 
     // The tempo is read once per block (a tempo change lands at most 128 samples late).
+    const bpm = this.#bpm();
+    const ticksPerSample = ticksPerSecond(bpm) / this.sampleRate;
     let window: PlayWindow | null = null;
     if (this.#playing) {
       window = this.#window;
-      window.ticksPerSample = ticksPerSecond(this.#bpm()) / this.sampleRate;
+      window.ticksPerSample = ticksPerSample;
       window.start = this.#position;
-      window.end = this.#position + window.ticksPerSample * frames;
+      window.end = this.#position + ticksPerSample * frames;
     }
+    const context = this.#context;
+    context.bpm = bpm;
+    context.ticksPerSample = ticksPerSample;
+    context.playing = this.#playing;
+    context.clockTick = this.#playing ? this.#position : this.#freeTick;
+    if (!this.#playing) this.#freeTick += ticksPerSample * frames;
 
-    for (const track of this.#tracks) track.process(mixLeft, mixRight, frames, window);
+    for (const track of this.#tracks) track.process(mixLeft, mixRight, frames, window, context);
     this.#processMetronome(mixLeft, mixRight, frames, window);
 
     let peak = this.#masterPeak;

@@ -27,6 +27,13 @@ describe('formatParam', () => {
     expect(formatParam(param({ unit: 'ct', min: -100, max: 100 }), 0)).toBe('0 ct');
   });
 
+  it('formats frequencies', () => {
+    const hz = param({ unit: 'Hz', min: 20, max: 20000 });
+    expect(formatParam(hz, 440.4)).toBe('440 Hz');
+    expect(formatParam(hz, 2000)).toBe('2.00 kHz');
+    expect(formatParam(hz, 12500)).toBe('12.5 kHz');
+  });
+
   it('uses step labels for enum params', () => {
     const wave = param({ min: 0, max: 2, step: 1, steps: ['A', 'B', 'C'] });
     expect(formatParam(wave, 1)).toBe('B');

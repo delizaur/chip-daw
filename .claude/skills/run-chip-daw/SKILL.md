@@ -30,7 +30,8 @@ End-to-end smoke check (~25 s). Prints PASS/FAIL lines, exits 1 on any failure:
 node .claude/skills/run-chip-daw/driver.mjs smoke
 ```
 
-It checks: audio starts on the first click; holding `A` plays a note (meter > 0) and releasing it
+It checks: audio starts on the first click; the preset chain can add, replace, bypass, move and
+remove boxes, a delay echoes after the note and notes play through an arpeggiator; holding `A` plays a note (meter > 0) and releasing it
 goes silent; the preset editor's wave selector and Attack knob change the synth as single undo
 steps that Ctrl+Z restores; `X`/`Z` shift the keyboard octave; the master fader raises the meter and
 undoes; mute toggles; key `3` selects track 3 and notes then play there; record + play + a held key
@@ -105,7 +106,9 @@ Options: `--prod` (production build), `--url <url>` (drive an already-running se
 Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Go to start`, `Play` (its
 name becomes `Pause` while playing), `Record`, `Overdub`, `Metronome`, `Zoom in`, `Zoom out`,
 `Mute Track N`, `Solo Track N`, `Select Track N`, `New`, `Import`, `Export`, `Quantize`,
-`Quantize selected`, `Fit`; tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
+`Quantize selected`, `Fit`, and per sequencer/effect box `<Name> on` (bypass toggle),
+`Move <Name> left`/`right`, `Remove <Name>`; comboboxes `Add sequencer`, `Add effect` (options
+`Arpeggiator`; `Bitcrush`, `Filter`, `Delay`, `Reverb`) and `<Name> type` (replace a box); tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
 `1/32`; img `MIDI activity` (its `title` is the last message); spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
 `Decay`, `Sustain`, `Release`, `Level`, `Transpose`, `Fine`; radios (wave) `12.5%`, `25%`, `50%`,
 `Tri`, `Noise`, `Metal`; combobox `MIDI input`. Piano keys (physical): `KeyA`…`Semicolon` play

@@ -73,6 +73,8 @@ export interface BoxInstance {
   type: string;
   /** All params are numbers; enum params are stepped numbers. */
   params: Record<string, number>;
+  /** Bypassed boxes are skipped (sequencers and effects pass through). Absent = active. */
+  bypassed?: boolean;
 }
 
 export interface AutomationTarget {

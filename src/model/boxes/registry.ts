@@ -1,9 +1,11 @@
 import { createId } from '../ids';
 import type { BoxInstance } from '../types';
 import { CHIP_SYNTH } from './chip-synth';
+import { ARPEGGIATOR, BITCRUSH, DELAY, FILTER, REVERB } from './effects';
 import type { BoxDescriptor, BoxKind, ParamDescriptor } from './types';
 
-const DESCRIPTORS: BoxDescriptor[] = [CHIP_SYNTH];
+/** Every box type, in the order the "add" menus list them. */
+const DESCRIPTORS: BoxDescriptor[] = [CHIP_SYNTH, ARPEGGIATOR, BITCRUSH, FILTER, DELAY, REVERB];
 
 const BY_TYPE = new Map(DESCRIPTORS.map((d) => [d.type, d]));
 

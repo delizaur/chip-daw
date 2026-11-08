@@ -23,7 +23,7 @@ describe('box registry', () => {
   });
 
   it('has valid param descriptors', () => {
-    for (const d of [...boxDescriptorsOfKind('synth')]) {
+    for (const d of (['synth', 'sequencer', 'effect'] as const).flatMap(boxDescriptorsOfKind)) {
       const ids = d.params.map((p) => p.id);
       expect(new Set(ids).size).toBe(ids.length);
       for (const p of d.params) {

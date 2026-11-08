@@ -1,6 +1,6 @@
-import type { BoxInstance, Clip, Tick, Track } from '../model/types';
-import { createSynth } from './boxes/registry';
-import type { SynthRuntime } from './boxes/types';
+import type { BoxInstance, Clip, Preset, Tick, Track } from '../model/types';
+import { createEffect, createSequencer, createSynth } from './boxes/registry';
+import type { BlockContext, EffectRuntime, SequencerRuntime, SynthRuntime } from './boxes/types';
 import { SmoothedValue, volumeToGain } from './dsp';
 import { BlockEvents, firstNoteFrom, scheduleNotes, type ScheduledNote } from './note-schedule';
 
@@ -23,17 +23,54 @@ function offsetOf(tick: Tick, window: PlayWindow, frames: number): number {
   );
 }
 
+/** A sequencer or effect box and its runtime (null for unknown types, which are skipped). */
+interface Slot<R> {
+  box: BoxInstance;
+  runtime: R | null;
+}
+
 /**
- * Audio-thread state for one track: its synth, gain, buffers, and the clip notes it plays.
- * `sync` and `locate` (on project or transport changes) may allocate; `process` must not.
+ * Rebuilds a list of box runtimes, keeping the runtime (and its state, e.g. a reverb tail) of
+ * every box that's still there, and updating params of boxes that changed.
+ */
+function syncSlots<R extends { setParams(params: Record<string, number>): void }>(
+  boxes: readonly BoxInstance[],
+  previous: readonly Slot<R>[],
+  create: (type: string) => R | null,
+): Slot<R>[] {
+  return boxes.map((box) => {
+    const existing = previous.find((s) => s.box.id === box.id && s.box.type === box.type);
+    if (existing) {
+      if (existing.box !== box) existing.runtime?.setParams(box.params);
+      return { box, runtime: existing.runtime };
+    }
+    const runtime = create(box.type);
+    runtime?.setParams(box.params);
+    return { box, runtime };
+  });
+}
+
+/**
+ * Audio-thread state for one track: its preset chain (sequencers → synth → effects), gain,
+ * buffers, and the clip notes it plays.
+ * `sync`, `locate` and the note methods (between blocks) may allocate; `process` must not.
  */
 export class TrackRuntime {
   readonly id: string;
   readonly #sampleRate: number;
   readonly #gain: SmoothedValue;
   #synth: SynthRuntime | null = null;
-  /** The synth box the runtime was built from. Immer keeps unchanged objects identical. */
+  /** The boxes the runtime was built from. Immer keeps unchanged objects identical. */
   #synthBox: BoxInstance | null = null;
+  #preset: Preset | null = null;
+  #sequencers: Slot<SequencerRuntime>[] = [];
+  #effects: Slot<EffectRuntime>[] = [];
+  /** Runtimes that aren't bypassed, in chain order (rebuilt on sync, read in process). */
+  #activeSequencers: SequencerRuntime[] = [];
+  #activeEffects: EffectRuntime[] = [];
+  /** One output event list per active sequencer. */
+  #stageEvents: BlockEvents[] = [];
+
   #clips: readonly Clip[] | null = null;
   #notes: ScheduledNote[] = [];
   /** Index of the next note to start. */
@@ -64,7 +101,37 @@ export class TrackRuntime {
     }
 
     // There's no segment selection by position yet: the preset that sounds is the first one.
-    const box = track.segments[0]?.preset.synth ?? null;
+    const preset = track.segments[0]?.preset ?? null;
+    if (preset === this.#preset) return;
+    this.#preset = preset;
+    this.#syncSynth(preset?.synth ?? null);
+
+    const sequencerRouting = this.#activeSequencers;
+    this.#sequencers = syncSlots(preset?.sequencers ?? [], this.#sequencers, createSequencer);
+    this.#effects = syncSlots(preset?.effects ?? [], this.#effects, (type) =>
+      createEffect(type, this.#sampleRate),
+    );
+    this.#activeSequencers = this.#sequencers.flatMap((s) =>
+      s.runtime && !s.box.bypassed ? [s.runtime] : [],
+    );
+    this.#activeEffects = this.#effects.flatMap((s) =>
+      s.runtime && !s.box.bypassed ? [s.runtime] : [],
+    );
+    while (this.#stageEvents.length < this.#activeSequencers.length) {
+      this.#stageEvents.push(new BlockEvents());
+    }
+    // If notes now take a different path (a sequencer added, removed, moved or bypassed),
+    // notes started through the old path would never get their note-off: release them.
+    const routingChanged =
+      sequencerRouting.length !== this.#activeSequencers.length ||
+      sequencerRouting.some((s, i) => s !== this.#activeSequencers[i]);
+    if (routingChanged) {
+      for (const slot of this.#sequencers) slot.runtime?.reset();
+      this.#synth?.allNotesOff();
+    }
+  }
+
+  #syncSynth(box: BoxInstance | null): void {
     if (box === this.#synthBox) return;
     if (!box) {
       this.#synth = null;
@@ -87,21 +154,27 @@ export class TrackRuntime {
   stopPlayback(): void {
     for (let pitch = 0; pitch < 128; pitch++) {
       if (this.#playingUntil[pitch] !== NOT_PLAYING) {
-        this.#synth?.noteOff(pitch);
+        this.noteOff(pitch);
         this.#playingUntil[pitch] = NOT_PLAYING;
       }
     }
   }
 
+  /** A live note (keyboard, MIDI): through the sequencers if there are any, else to the synth. */
   noteOn(pitch: number, velocity: number): void {
-    this.#synth?.noteOn(pitch, velocity);
+    const first = this.#activeSequencers[0];
+    if (first) first.noteOn(pitch, velocity, 0);
+    else this.#synth?.noteOn(pitch, velocity);
   }
 
   noteOff(pitch: number): void {
-    this.#synth?.noteOff(pitch);
+    const first = this.#activeSequencers[0];
+    if (first) first.noteOff(pitch, 0);
+    else this.#synth?.noteOff(pitch);
   }
 
   allNotesOff(): void {
+    for (const slot of this.#sequencers) slot.runtime?.reset();
     this.#synth?.allNotesOff();
     this.#playingUntil.fill(NOT_PLAYING);
   }
@@ -115,6 +188,7 @@ export class TrackRuntime {
     mixRight: Float32Array,
     frames: number,
     window: PlayWindow | null,
+    context: BlockContext,
   ) {
     if (this.#left.length < frames) {
       this.#left = new Float32Array(frames);
@@ -125,10 +199,26 @@ export class TrackRuntime {
     left.fill(0, 0, frames);
     right.fill(0, 0, frames);
 
-    const events = this.#events;
+    // Notes from clips, then through each sequencer in turn.
+    let events = this.#events;
     events.clear();
     if (window) this.#collectEvents(window, frames);
+    for (let s = 0; s < this.#activeSequencers.length; s++) {
+      const sequencer = this.#activeSequencers[s]!;
+      for (let i = 0; i < events.length; i++) {
+        if (events.isOn(i)) {
+          sequencer.noteOn(events.pitches[i]!, events.velocities[i]!, events.offsets[i]!);
+        } else {
+          sequencer.noteOff(events.pitches[i]!, events.offsets[i]!);
+        }
+      }
+      const output = this.#stageEvents[s]!;
+      output.clear();
+      sequencer.render(frames, context, output);
+      events = output;
+    }
 
+    // The synth, rendered in stretches between note events.
     const synth = this.#synth;
     let position = 0;
     for (let i = 0; i < events.length; i++) {
@@ -141,6 +231,9 @@ export class TrackRuntime {
       else synth?.noteOff(events.pitches[i]!);
     }
     if (position < frames) synth?.process(left, right, position, frames - position);
+
+    const effects = this.#activeEffects;
+    for (let e = 0; e < effects.length; e++) effects[e]!.process(left, right, frames, context);
 
     const gain = this.#gain;
     for (let i = 0; i < frames; i++) {

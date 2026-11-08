@@ -1,8 +1,11 @@
 <!--
   Bottom panel: the selected track's preset as a chain of boxes, left to right:
-  sequencers → synth → effects. Phase 1 has no transport, so it edits the track's first segment.
+  sequencers → synth → effects, with "add" menus at both ends. It edits the track's first
+  segment (preset walls arrive in Phase 4).
 -->
 <script lang="ts">
+  import { addBox } from '../../model/chain-commands';
+  import { boxDescriptorsOfKind, createBox } from '../../model/boxes/registry';
   import { session } from '../state/session.svelte';
   import { trackColor } from '../theme';
   import BoxPanel from './BoxPanel.svelte';
@@ -10,9 +13,16 @@
   const index = $derived(session.selectedTrackIndex);
   const track = $derived(session.selectedTrack);
   const segment = $derived(track?.segments[0]);
-  const boxes = $derived(
-    segment ? [...segment.preset.sequencers, segment.preset.synth, ...segment.preset.effects] : [],
-  );
+  const address = $derived(track && segment ? { trackId: track.id, segmentId: segment.id } : null);
+  const sequencerTypes = boxDescriptorsOfKind('sequencer');
+  const effectTypes = boxDescriptorsOfKind('effect');
+
+  /** "Add" menus: add the chosen box type, then reset the menu to its label. */
+  function add(event: Event) {
+    const select = event.currentTarget as HTMLSelectElement;
+    if (address && select.value) session.run(addBox(address, createBox(select.value)));
+    select.value = '';
+  }
 </script>
 
 <section class="preset-editor" aria-label="Preset editor" style:--color={trackColor(index)}>
@@ -25,10 +35,27 @@
       </div>
     </header>
     <div class="chain">
-      {#each boxes as box, i (box.id)}
-        {#if i > 0}<span class="arrow" aria-hidden="true">→</span>{/if}
-        <BoxPanel {box} address={{ trackId: track.id, segmentId: segment.id, boxId: box.id }} />
+      <select class="add" aria-label="Add sequencer" onchange={add}>
+        <option value="">+ Sequencer</option>
+        {#each sequencerTypes as type (type.type)}
+          <option value={type.type}>{type.name}</option>
+        {/each}
+      </select>
+      {#each segment.preset.sequencers as box, i (box.id)}
+        <BoxPanel {box} segment={address!} index={i} count={segment.preset.sequencers.length} />
+        <span class="arrow" aria-hidden="true">→</span>
       {/each}
+      <BoxPanel box={segment.preset.synth} segment={address!} index={0} count={1} />
+      {#each segment.preset.effects as box, i (box.id)}
+        <span class="arrow" aria-hidden="true">→</span>
+        <BoxPanel {box} segment={address!} index={i} count={segment.preset.effects.length} />
+      {/each}
+      <select class="add" aria-label="Add effect" onchange={add}>
+        <option value="">+ Effect</option>
+        {#each effectTypes as type (type.type)}
+          <option value={type.type}>{type.name}</option>
+        {/each}
+      </select>
     </div>
   {/if}
 </section>
@@ -87,6 +114,25 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
+  }
+
+  .add {
+    align-self: center;
+    height: 32px;
+    padding: 0 var(--space-3);
+    border: 1px dashed var(--ink-dim);
+    border-radius: var(--r-m);
+    background: none;
+    color: var(--ink-dim);
+    font: inherit;
+    font-size: var(--text-s);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .add:hover {
+    color: var(--ink);
+    border-color: var(--ink);
   }
 
   .arrow {

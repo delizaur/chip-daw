@@ -314,6 +314,40 @@ async function smoke(c) {
   check((await c.meter()) > 0.02, 'notes play on the newly selected track');
   await c.keyup(['KeyA']);
 
+  // Preset chain on track 3: add, replace, bypass, move, remove boxes; effects and the arp sound.
+  const chain = async () =>
+    JSON.parse(
+      await c.eval([
+        "(() => { const p = chipDaw.session.selectedTrack.segments[0].preset; return [...p.sequencers, p.synth, ...p.effects].map(b => b.type + (b.bypassed ? '(off)' : '')).join(' '); })()",
+      ]),
+    );
+  await c.select(['Add', 'effect', '|', 'Delay']);
+  check((await chain()) === 'synth.chip fx.delay', `"+ Effect" adds a delay (${await chain()})`);
+  check((await undoTitle()).startsWith('Undo Add Delay'), 'adding a box is undoable');
+  await c.sleep(['600']);
+  await c.keydown(['KeyA']);
+  await c.sleep(['80']);
+  await c.keyup(['KeyA']);
+  await c.sleep(['250']); // the dry note has died away (100 ms release); the echo is at 375 ms
+  const echo = await c['meter-max'](['400']);
+  check(echo > 0.005, `the delay echoes after the note (meter ${echo.toFixed(3)})`);
+  await c.select(['Delay', 'type', '|', 'Reverb']);
+  check((await chain()) === 'synth.chip fx.reverb', 'the type menu replaces a box');
+  await c.click(['button', 'Reverb', 'on']);
+  check((await chain()) === 'synth.chip fx.reverb(off)', 'the power button bypasses a box');
+  await c.select(['Add', 'effect', '|', 'Filter']);
+  await c.click(['button', 'Move', 'Filter', 'left']);
+  check((await chain()) === 'synth.chip fx.filter fx.reverb(off)', 'boxes can be moved');
+  await c.select(['Add', 'sequencer', '|', 'Arpeggiator']);
+  check((await chain()).startsWith('seq.arp synth.chip'), '"+ Sequencer" adds an arpeggiator');
+  await c.keydown(['KeyA']);
+  const arpLevel = await c['meter-max'](['500']);
+  await c.keyup(['KeyA']);
+  check(arpLevel > 0.02, `notes play through the arpeggiator (meter ${arpLevel.toFixed(3)})`);
+  for (const name of ['Arpeggiator', 'Filter', 'Reverb']) await c.click(['button', 'Remove', name]);
+  check((await chain()) === 'synth.chip', 'boxes can be removed');
+  await c.sleep(['600']);
+
   // Recording, clip editing and playback (track 3 is selected at this point). The timeline
   // canvas has a 24 px ruler, 56 px lanes and 112 px per bar at the default zoom.
   const clips = async () =>

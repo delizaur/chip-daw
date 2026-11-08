@@ -16,6 +16,10 @@ export function formatParam(param: ParamDescriptor, value: number): string {
       return `${signed(Math.round(value))} st`;
     case 'ct':
       return `${signed(Math.round(value))} ct`;
+    case 'Hz':
+      return value >= 1000
+        ? `${(value / 1000).toFixed(value >= 10000 ? 1 : 2)} kHz`
+        : `${Math.round(value)} Hz`;
     default:
       return param.step && Number.isInteger(param.step)
         ? String(Math.round(value))
