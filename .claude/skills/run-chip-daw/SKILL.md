@@ -1,0 +1,142 @@
+---
+name: run-chip-daw
+description: Build, run, and drive chip-daw (the browser DAW). Use when asked to start or run the app, take a screenshot of its UI, check that audio plays, click through the UI, verify the GitHub Pages build, or run its tests.
+---
+
+chip-daw is a Vite + Svelte web app whose audio engine runs in an AudioWorklet. Drive it with
+`.claude/skills/run-chip-daw/driver.mjs`: it starts Vite in-process on a free port, opens headless,
+**muted** Chrome via `playwright-core`, runs a smoke flow or your commands, saves screenshots, and
+shuts everything down. All paths are relative to the repo root.
+
+Verified on Windows 11 with Git Bash, Node 22, and installed Chrome/Edge. Linux/macOS not verified.
+
+## Prerequisites
+
+- Node 22+
+- Google Chrome or Microsoft Edge installed (the driver uses the system browser; no
+  `playwright install` needed). Any other Chromium: set `CHROME_PATH=/path/to/binary`.
+
+## Setup
+
+```bash
+npm install
+```
+
+## Run (agent path)
+
+End-to-end smoke check (~4 s). Prints PASS/FAIL lines, exits 1 on any failure:
+
+```bash
+node .claude/skills/run-chip-daw/driver.mjs smoke
+```
+
+It checks: audio starts on the first click, the master meter shows the test tone at the expected
+level (≈0.1586), a master-knob drag is one undo step and Ctrl+Z restores it, mute toggles, key `3`
+selects track 3, and no console errors or HTTP ≥400 responses. Screenshots
+(`1-initial`, `2-playing`, `3-dark`) land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
+
+Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
+(rebuilds `dist/`):
+
+```bash
+node .claude/skills/run-chip-daw/driver.mjs smoke --prod
+```
+
+Custom flows: pipe commands to `script` mode. Each command's result is printed after `> command`:
+
+```bash
+node .claude/skills/run-chip-daw/driver.mjs script <<'EOF'
+goto
+status
+click button Play test tone
+wait-text Audio on
+meter
+click radio Triangle
+drag slider Pitch -100
+attr aria-valuetext slider Pitch
+theme dark
+viewport 820 1000
+screenshot narrow-dark
+eval document.title
+errors
+EOF
+```
+
+| command | what it does |
+|---|---|
+| `goto [path]` | load the app (waits for the Tracks panel) |
+| `click <role> <name…>` | click by ARIA role + exact accessible name, e.g. `click button Mute Track 2` |
+| `press <key>` | keyboard, e.g. `press Control+z`, `press 3` |
+| `drag <role> <name…> <dy>` | vertical pointer drag; negative = up = increase (knobs) |
+| `attr <attribute> <role> <name…>` | print an attribute, e.g. `attr aria-valuetext slider Master` |
+| `wait-text <text…>` | wait up to 10 s for text to appear |
+| `status` | audio status pill text (`Audio off · click to start` / `Audio on`) |
+| `meter` | master meter level 0..1 (after 300 ms settle) |
+| `eval <js…>` | evaluate JS in the page, print JSON |
+| `theme dark\|light` | emulate color scheme (waits for transitions) |
+| `viewport <w> <h>` | resize |
+| `sleep <ms>` | wait |
+| `screenshot [name]` | save `tmp/run-chip-daw/<name>.png` |
+| `errors` | console errors/warnings, page errors and HTTP ≥400 so far, or `none` |
+
+Options: `--prod` (production build), `--url <url>` (drive an already-running server),
+`--out <dir>` (screenshot dir).
+
+Useful names: buttons `Play test tone` / `Stop test tone`, `Undo`, `Redo`, `Mute Track N`,
+`Solo Track N`, `Select Track N`; sliders `Master`, `Pitch`, `Track N volume`; radios `Square`,
+`Triangle`, `Sine`.
+
+## Run (human path)
+
+```bash
+npm run dev    # http://localhost:5173. Audio starts on the first click.
+```
+
+If it was started in the background (not Ctrl+C in a terminal), stopping npm leaves Vite listening.
+Kill the listener:
+
+```bash
+PID=$(netstat -ano | grep -E ":5173 .*LISTENING" | awk '{print $NF}' | head -1); taskkill //PID $PID //F
+```
+
+## Test
+
+```bash
+npm test         # Vitest: model, engine (renders audio to buffers), control maths. 42 tests.
+npm run check    # svelte-check + tsc for the no-DOM core + vite config
+npm run lint     # also enforces that src/model and src/engine never import ui/audio code
+```
+
+## Gotchas
+
+- **Audio needs a user gesture.** The app starts audio on the first pointerdown/keydown, so a
+  `click` must happen before `meter` shows anything. Headless Chrome runs the AudioWorklet fine.
+- **The driver always passes `--mute-audio`.** Without it, a headless run plays the test tone
+  through the machine's real speakers.
+- **Read stdin before starting Vite/the browser.** In script mode, stdin arrived empty when read
+  after `createServer()`/`chromium.launch()`. The driver reads it first; keep it that way.
+- **Fixed ports collide.** Port 5199 was already taken by another program on the dev machine. The
+  driver uses port 0 (any free port) and an in-process server, so nothing is left running. Don't
+  switch it to `npm run dev &`: on Windows, stopping the npm wrapper leaves Vite listening
+  (verified).
+- **Git Bash rewrites `/chip-daw/`.** `BASE_PATH=/chip-daw/ npm run build` in Git Bash becomes a
+  Windows path (Vite warns `"base" option should start with a slash`). Use `--prod`, which sets it
+  in-process, or prefix `MSYS_NO_PATHCONV=1`.
+- **Theme screenshots catch transitions.** Toggles animate colors for 80 ms; a screenshot right
+  after `emulateMedia` shows washed-out grey buttons. The `theme` command waits 300 ms.
+- **`drag` on a slider jumps first.** Sliders (track volume) jump to where the pointer lands, so
+  `drag slider Track 1 volume 0` sets ~50%. Knobs move relative to the drag. For exact slider
+  values, focus with a click and use `press ArrowLeft` / `ArrowRight` (1% steps).
+- **Test-tone controls aren't undoable.** Waveform and Pitch are dev-only engine settings, not
+  project state, so `Control+z` after changing them does nothing. Use `Master`, track volume,
+  mute or solo to test undo.
+- **The meter is a CSS variable.** The level is `--level` on `.meter-fill`, the engine's peak
+  over ~33 ms. The square test tone at default master volume reads 0.25 × 0.8² → tanh → 0.1586.
+
+## Troubleshooting
+
+- **`No browser found`**: neither Chrome nor Edge is installed. Install one, or set `CHROME_PATH`.
+- **`npx playwright …` → "npx canceled due to missing packages"**: the full `playwright` package
+  isn't installed. The driver only needs `playwright-core` (a devDependency) and a system browser.
+- **svelte-check: `Could not find a declaration file for module './X.svelte'`**: the component
+  has no `<script lang="ts">` block. Add one, even if it's empty.
