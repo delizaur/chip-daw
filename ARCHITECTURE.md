@@ -61,7 +61,7 @@ UI → engine:
 - `setRecord(armed)`: while armed and playing, live notes are captured into a take
 - `setMetronome(enabled)`
 - `setLatency(seconds)`: output latency, sent by the bridge once audio runs
-- `noteOn(trackId, pitch, velocity)` / `noteOff(trackId, pitch)`: live input (computer keyboard, MIDI)
+- `noteOn(trackId, pitch, velocity, record?)` / `noteOff(trackId, pitch)`: live input (computer keyboard, MIDI); `record: false` for piano roll auditions
 - `allNotesOff()`: releases everything (window blur, Escape, MIDI CC 120/123)
 
 Knob moves during a gesture need no special message: each step is applied to the project immediately and reaches the engine as a normal patch. The transaction only affects how the steps are grouped for undo.
@@ -225,10 +225,11 @@ interface ParamDescriptor {
 
 ## Persistence
 
-- **Project file:** `.chip`, JSON with `formatVersion`. A `migrations` list upgrades old files on load. It may become a zip if samples are ever added.
+- **Project file:** `.chip`, the `Project` as JSON (with `formatVersion`). Loading goes JSON → `migrateProject` (upgrades old formats, rejects newer ones) → `validateProject` (checks the shape and names the broken part, e.g. `tracks[2].clips[0].notes[0].pitch should be a number`). It may become a zip if samples are ever added. Code: `src/model/project-file.ts`, `validate.ts`, `migrations.ts`.
+- **Project name:** taken from the file name on import and on export (when the save dialog lets the user rename the file).
 - **Preset file:** `.chippreset`, JSON containing a single `Preset`.
-- **Autosave:** the current project is saved to IndexedDB (debounced) and restored on reload.
-- **Import/export:** File System Access API where supported (Chromium), with an `<a download>` / `<input type=file>` fallback elsewhere.
+- **Autosave:** every project change schedules a save to IndexedDB 0.8 s later (and immediately when the page is hidden or closed). It's stored as the same serialized text as a `.chip` file and goes through the same parse/migrate/validate path on load. On startup it's restored unless the user already started editing. If storage is unavailable (private browsing), the app keeps working and warns once in the console. Code: `src/persistence/autosave.ts`.
+- **Import/export:** export uses the File System Access save picker where supported (Chromium), otherwise a download. Import uses a plain `<input type=file>` everywhere. Opening or starting a new project clears undo history, selection and transport state; "New" asks for confirmation when there's work to lose. Code: `src/persistence/files.ts`.
 - **Audio export:** offline render in a Worker → 16/24-bit WAV encoder. MP3 later (e.g. a WASM LAME encoder).
 
 ## UI
@@ -236,7 +237,8 @@ interface ParamDescriptor {
 - **Layout:** top bar, left sidebar (preset library), center (track arrangement), right sidebar (track presets, mute/solo/volume), bottom panel (preset editor or piano roll).
 - **Canvas** is used for the arrangement timeline, automation lanes and the piano roll. Everything else is Svelte components.
 - **Arrangement timeline** (`src/ui/arrangement/`): pure geometry (tick↔pixel, snap grid by zoom, hit-testing) is unit-tested; the canvas draws a ruler, lanes, clips with a note preview, a recording region and the playhead. While dragging, clips are previewed as ghosts and the edit is committed as one command on release. Interactions: click the ruler to seek; click/Shift-click clips to select; drag to move (also across tracks) or drag an edge to resize, with Alt to disable snapping; double-click an empty lane to create a one-bar clip; Shift+wheel scrolls, Ctrl/Cmd+wheel zooms.
-- **Shortcuts:** Space play/pause, Home go to start, Delete/Backspace delete clips, Ctrl/Cmd+C/V/D copy/paste/duplicate clips (paste goes to the playhead on the selected track), Escape releases notes and clears the selection.
+- **Piano roll** (`src/ui/piano-roll/`, bottom panel tab): edits the clip that's selected on its own (double-click a clip to open it). Canvas with a key column, ruler, note grid and a velocity lane; geometry is unit-tested. Click empty space inside the clip to draw a note (drag right to set its length; new notes reuse the last drawn/resized length and the keyboard velocity); drag notes to move them in time and pitch; drag a note's right edge to resize; Shift-click to add to the selection, Shift-drag to select a rectangle; double-click a note to delete it; click or drag across velocity stems to set velocities (all selected notes when dragging a selected one). Grid 1/4–1/32 with Alt to disable snapping; Quantize snaps note starts (the selection, or all notes) to the song grid. Notes sound when drawn, clicked or dragged to a new pitch; these auditions are never recorded (`noteOn` with `record: false`). Each gesture is one undo step: the edit runs as live commands inside a history transaction, so the engine hears changes immediately.
+- **Shortcuts** act on the editor clicked last (`session.focusArea`): in the piano roll on notes, otherwise on clips. Space play/pause, Home go to start, Delete/Backspace delete, Ctrl/Cmd+A select all, Ctrl/Cmd+C/V/D copy/paste/duplicate (clips paste at the playhead on the selected track; notes at the playhead if it's inside the clip, else at its start), ↑/↓ transpose selected notes (Shift: an octave), ←/→ move them by the grid, Escape releases notes and clears the selection, Ctrl/Cmd+S export, Ctrl/Cmd+O import. Keymap handlers can return `false` to leave a key alone (so arrows still scroll when there's nothing to nudge).
 - **Base controls** (knob, slider, meter fader, toggle, segmented selector) form a small in-house kit that defines the OP-1-inspired look. Design tokens (colors, radii, type) are CSS custom properties. The theme is **dark by default**; a light theme exists behind `<html data-theme="light">` for a future setting.
 - **Input:**
   - Number keys select tracks 1–9 (or fewer if the project has fewer tracks). Tracks beyond 9 are selected by clicking.
@@ -257,7 +259,7 @@ src/
   model/        types, defaults, migrations, commands, boxes/ (descriptors + registry) (pure TS)
   engine/       tracks, mixer, envelopes, oscillators, boxes/ (synth implementations, voice pool) (pure TS)
   audio/        worklet entry, main-thread engine bridge, Web MIDI input
-  persistence/  IndexedDB, file import/export, WAV encoder (Phase 2+)
+  persistence/  IndexedDB autosave, .chip file save/open (WAV encoder in Phase 3)
   ui/           Svelte components: layout panels, controls kit, preset editor, computer-keyboard input
 ```
 

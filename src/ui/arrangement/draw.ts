@@ -1,5 +1,6 @@
 import { ticksPerBar, ticksPerBeat } from '../../model/time';
 import type { Clip, MeterEvent, Tick, Track } from '../../model/types';
+import { colorResolver, roundRect, type ColorResolver } from '../canvas';
 import { trackColor } from '../theme';
 import { LANE_HEIGHT, laneTop, RULER_HEIGHT, tickToX, type TimelineView } from './geometry';
 
@@ -34,33 +35,6 @@ export interface TakePreview {
   /** Tracks to draw a recording region on (the selected track, plus any receiving notes). */
   trackIndices: number[];
   notes: { trackIndex: number; pitch: number; startTick: Tick; endTick: Tick; held: boolean }[];
-}
-
-/** Resolves "var(--name)" colors for the canvas, which can't read CSS variables itself. */
-function colorResolver(element: Element) {
-  const style = getComputedStyle(element);
-  const cache = new Map<string, string>();
-  return (value: string) => {
-    let resolved = cache.get(value);
-    if (resolved === undefined) {
-      const match = /^var\((--[\w-]+)\)$/.exec(value);
-      resolved = match ? style.getPropertyValue(match[1]!).trim() : value;
-      cache.set(value, resolved);
-    }
-    return resolved;
-  };
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) {
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2));
 }
 
 function drawClip(
@@ -127,7 +101,7 @@ function drawTake(
   ctx: CanvasRenderingContext2D,
   scene: TimelineScene,
   take: TakePreview,
-  color: (value: string) => string,
+  color: ColorResolver,
 ) {
   const { view, playhead } = scene;
   const start = Math.min(take.startTick, ...take.notes.map((n) => n.startTick));

@@ -3,7 +3,7 @@
   import LeftSidebar from './ui/layout/LeftSidebar.svelte';
   import RightSidebar from './ui/layout/RightSidebar.svelte';
   import TopBar from './ui/layout/TopBar.svelte';
-  import PresetEditor from './ui/editor/PresetEditor.svelte';
+  import BottomPanel from './ui/editor/BottomPanel.svelte';
   import { installComputerKeyboard } from './ui/input/computer-keyboard';
   import { installKeymap, type KeyHandler } from './ui/keymap';
   import { session } from './ui/state/session.svelte';
@@ -16,15 +16,27 @@
       'mod+y': () => session.redo(),
       escape: () => {
         session.allNotesOff();
-        session.selectClips([]);
+        session.clearSelection();
       },
       space: () => session.togglePlay(),
       home: () => session.seek(0),
-      delete: () => session.deleteSelectedClips(),
-      backspace: () => session.deleteSelectedClips(),
-      'mod+c': () => session.copySelectedClips(),
+      // These act on notes when the piano roll was clicked last, otherwise on clips.
+      delete: () => session.deleteSelection(),
+      backspace: () => session.deleteSelection(),
+      'mod+a': () => session.selectAll(),
+      'mod+c': () => session.copySelection(),
       'mod+v': () => session.paste(),
-      'mod+d': () => session.duplicateSelectedClips(),
+      'mod+d': () => session.duplicateSelection(),
+      // Piano roll: transpose / move selected notes. Unhandled otherwise (keeps scrolling).
+      arrowup: () => session.nudgeNotes(1, 0),
+      arrowdown: () => session.nudgeNotes(-1, 0),
+      'shift+arrowup': () => session.nudgeNotes(12, 0),
+      'shift+arrowdown': () => session.nudgeNotes(-12, 0),
+      arrowleft: () => session.nudgeNotes(0, -1),
+      arrowright: () => session.nudgeNotes(0, 1),
+      // Files.
+      'mod+s': () => void session.exportProject(),
+      'mod+o': () => void session.importProject(),
     };
     for (let i = 0; i < 9; i++) bindings[`digit${i + 1}`] = () => session.selectTrack(i);
     return installKeymap(bindings);
@@ -57,12 +69,12 @@
   });
 </script>
 
-<div class="app">
+<div class="app" style:--bottom-height={session.bottomTab === 'pianoRoll' ? '380px' : '250px'}>
   <div class="top"><TopBar /></div>
   <div class="left"><LeftSidebar /></div>
   <div class="center"><Arrangement /></div>
   <div class="right"><RightSidebar /></div>
-  <div class="bottom"><PresetEditor /></div>
+  <div class="bottom"><BottomPanel /></div>
 </div>
 
 <style>
@@ -70,7 +82,7 @@
     display: grid;
     height: 100%;
     grid-template-columns: 220px minmax(0, 1fr) 280px;
-    grid-template-rows: auto minmax(0, 1fr) 220px;
+    grid-template-rows: auto minmax(0, 1fr) var(--bottom-height);
     grid-template-areas:
       'top top top'
       'left center right'

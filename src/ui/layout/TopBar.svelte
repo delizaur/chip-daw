@@ -27,6 +27,30 @@
     <span class="wordmark">chip</span>
   </div>
 
+  <div class="file">
+    <span class="project-name" title="Project name (set when you export or import)"
+      >{session.project.name}</span
+    >
+    <button
+      type="button"
+      class="text-button"
+      title="New project"
+      onclick={() => session.newProject()}>New</button
+    >
+    <button
+      type="button"
+      class="text-button"
+      title="Import a .chip project ({mod}O)"
+      onclick={() => session.importProject()}>Import</button
+    >
+    <button
+      type="button"
+      class="text-button"
+      title="Export this project as a .chip file ({mod}S)"
+      onclick={() => session.exportProject()}>Export</button
+    >
+  </div>
+
   <button
     type="button"
     class="audio-status {session.audioStatus}"
@@ -73,6 +97,10 @@
     {noteName((session.keyboardOctave + 1) * 12)} · vel {session.keyboardVelocity}
   </span>
 
+  {#if session.notice}
+    <div class="notice {session.notice.kind}" role="status">{session.notice.text}</div>
+  {/if}
+
   <MeterFader
     label="Master"
     value={session.project.masterVolume}
@@ -93,6 +121,63 @@
     padding: 0 var(--space-4);
     background: var(--panel);
     border-bottom: 1px solid var(--line);
+  }
+
+  .file {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .project-name {
+    max-width: 140px;
+    margin-right: var(--space-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-s);
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+
+  .text-button {
+    position: relative;
+    height: 26px;
+    padding: 0 var(--space-2);
+    border-radius: var(--r-s);
+    font-size: var(--text-s);
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .text-button::after {
+    content: '';
+    position: absolute;
+    inset: -7px 0;
+  }
+
+  .text-button:hover {
+    background: var(--panel-sunken);
+  }
+
+  .notice {
+    position: fixed;
+    top: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    max-width: min(560px, calc(100vw - 32px));
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--r-m);
+    background: var(--panel-raised);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
+    font-size: var(--text-s);
+    color: var(--ink);
+  }
+
+  .notice.error {
+    background: var(--c-red);
+    color: var(--ink-on-color);
   }
 
   .brand {

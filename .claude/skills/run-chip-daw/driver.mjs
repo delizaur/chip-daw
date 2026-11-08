@@ -197,6 +197,23 @@ function createCommands(page, url, errors) {
       await page.locator(selector.join(' ')).first().screenshot({ path });
       return path;
     },
+    /**
+     * export-file <path>: clicks Export and saves the .chip download to <path>. The native save
+     * picker can't be driven headless, so it's disabled first and the app falls back to a download.
+     */
+    async 'export-file'([path]) {
+      await page.evaluate(() => (window.showSaveFilePicker = undefined));
+      const download = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Export', exact: true }).click();
+      await (await download).saveAs(resolve(ROOT, path));
+      return resolve(ROOT, path);
+    },
+    /** import-file <path>: clicks Import and picks <path> in the file dialog. */
+    async 'import-file'([path]) {
+      const chooser = page.waitForEvent('filechooser');
+      await page.getByRole('button', { name: 'Import', exact: true }).click();
+      await (await chooser).setFiles(resolve(ROOT, path));
+    },
     async errors() {
       return errors.length ? errors.join('\n') : 'none';
     },
@@ -317,7 +334,7 @@ async function smoke(c) {
   );
   check((await undoTitle()).startsWith('Undo Record'), 'the take is one undo step');
 
-  await c['drag-at'](['canvas', '20', '164', '132', '220']);
+  await c['drag-at'](['.timeline-canvas', '20', '164', '132', '220']);
   now = await clips();
   check(
     now === `3:3840+${length}/1`,
@@ -334,12 +351,107 @@ async function smoke(c) {
   await c.press(['Control+z']);
   check((await clips()).split(' ').length === 2, 'Ctrl+Z restores it');
 
-  await c['click-at'](['canvas', '112', '10']); // ruler at bar 2
+  await c['click-at'](['.timeline-canvas', '112', '10']); // ruler at bar 2
   await c.press(['Space']);
   const level = await c['meter-max'](['1000']);
   await c.press(['Space']);
   check(level > 0.02, `Space plays the recorded clip back (meter ${level.toFixed(3)})`);
   await c.screenshot(['3-arrangement']);
+
+  // Piano roll: double-click an empty lane (track 6, bar 1) to create a clip, then double-click
+  // the clip to open it.
+  const lane6 = String(24 + 56 * 5 + 28);
+  await c['dblclick-at'](['.timeline-canvas', '20', lane6]);
+  await c['dblclick-at'](['.timeline-canvas', '20', lane6]);
+  check(
+    (await c.attr(['aria-selected', 'tab', 'Piano', 'roll'])) === 'true',
+    'double-clicking a clip opens the piano roll',
+  );
+  // The view is fitted to the one-bar clip; compute note coordinates like fitView does.
+  const [rollWidth, rollHeight] = JSON.parse(
+    await c.eval([
+      "(() => { const r = document.querySelector('.piano-roll-canvas').getBoundingClientRect(); return [r.width, r.height]; })()",
+    ]),
+  );
+  const ppt = (rollWidth - 44 - 24) / 3840;
+  const top = 66 + Math.floor(Math.floor((rollHeight - 76) / 12) / 2);
+  const X = (tick) => String(Math.round(56 + tick * ppt));
+  const Y = (pitch) => String(20 + (top - pitch) * 12 + 6);
+  const notes = async () =>
+    JSON.parse(
+      await c.eval([
+        'chipDaw.session.editing.clip.notes.map(n => `${n.tick}+${n.durationTicks}:${n.pitch}@${n.velocity}`).join(" ")',
+      ]),
+    );
+  await c['drag-at'](['.piano-roll-canvas', String(Number(X(0)) + 2), Y(60), X(960), Y(60)]);
+  await c['click-at'](['.piano-roll-canvas', String(Number(X(960)) + 2), Y(64)]);
+  let now2 = await notes();
+  check(
+    now2 === '0+960:60@100 960+960:64@100',
+    `drawing adds notes; drag sets the length (${now2})`,
+  );
+  check((await undoTitle()).startsWith('Undo Add note'), 'each drawn note is one undo step');
+  await c['drag-at']([
+    '.piano-roll-canvas',
+    String(Number(X(960)) + 20),
+    Y(64),
+    String(Number(X(960)) + 20),
+    Y(67),
+  ]);
+  now2 = await notes();
+  check(now2.endsWith('960+960:67@100'), `dragging a note moves its pitch (${now2})`);
+  await c['drag-at']([
+    '.piano-roll-canvas',
+    String(Number(X(960)) - 2),
+    Y(60),
+    String(Number(X(1920)) - 2),
+    Y(60),
+  ]);
+  now2 = await notes();
+  check(now2.startsWith('0+1920:60'), `dragging a note's end resizes it (${now2})`);
+  await c['click-at'](['.piano-roll-canvas', String(Number(X(0)) + 1), String(rollHeight - 14)]);
+  now2 = await notes();
+  check(/^0\+1920:60@([1-9]|[1-3]\d)\b/.test(now2), `the velocity lane sets velocity (${now2})`);
+  await c.press(['Control+a']);
+  await c.press(['ArrowUp']);
+  now2 = await notes();
+  check(now2.includes(':61@') && now2.includes(':68@'), `↑ transposes the selection (${now2})`);
+  await c.press(['Delete']);
+  check((await notes()) === '', 'Delete removes the selected notes');
+  await c.press(['Control+z']);
+  check((await notes()).split(' ').length === 2, 'Ctrl+Z brings them back');
+  await c['dblclick-at'](['.piano-roll-canvas', String(Number(X(960)) + 20), Y(68)]);
+  check((await notes()).split(' ').length === 1, 'double-clicking a note deletes it');
+  await c['click-at'](['.timeline-canvas', '2', '10']); // playhead to the start
+  await c.sleep(['600']); // let note auditions from the edits above fade
+  const idle = await c['meter-max'](['400']);
+  check(idle === 0, `nothing sounds while stopped (meter ${idle.toFixed(3)})`);
+  await c.press(['Space']);
+  const rollLevel = await c['meter-max'](['800']);
+  await c.press(['Space']);
+  check(rollLevel > 0.005, `drawn notes play back (meter ${rollLevel.toFixed(3)})`);
+  await c.screenshot(['4-piano-roll']);
+
+  // Files: export, start a new project, import it back; autosave survives a reload.
+  await c['export-file'](['tmp/run-chip-daw/smoke.chip']);
+  const exported = JSON.parse(
+    (await import('node:fs')).readFileSync(resolve(ROOT, 'tmp/run-chip-daw/smoke.chip'), 'utf8'),
+  );
+  const exportedClips = exported.tracks.reduce((sum, t) => sum + t.clips.length, 0);
+  check(exportedClips === 3, `Export writes the project (${exportedClips} clips)`);
+  await c.click(['button', 'New']);
+  check((await clips()) === '', 'New starts an empty project');
+  await c['import-file'](['tmp/run-chip-daw/smoke.chip']);
+  await c.sleep(['300']);
+  check((await clips()).split(' ').length === 3, 'Import restores the clips');
+  check(
+    JSON.parse(await c.eval(['chipDaw.session.project.name'])) === 'smoke',
+    'the project is named after the file',
+  );
+  await c.sleep(['1200']); // autosave runs 0.8 s after the last change
+  await c.goto([]);
+  await c.sleep(['500']);
+  check((await clips()).split(' ').length === 3, 'reloading restores the autosaved project');
 
   // MIDI (permission granted by the driver; there are no devices in a headless browser).
   await c.select(['MIDI', 'input', '|', 'Enable', 'MIDI…']);
@@ -348,7 +460,7 @@ async function smoke(c) {
   check(/^MIDI: (no devices|all inputs)$/.test(JSON.parse(midi)), `MIDI can be enabled (${midi})`);
 
   await c.theme(['light']);
-  await c.screenshot(['4-light']);
+  await c.screenshot(['5-light']);
 
   const errors = await c.errors();
   check(errors === 'none', `no console errors (${errors})`);
@@ -379,6 +491,7 @@ try {
     (m) => ['error', 'warning'].includes(m.type()) && errors.push(`[${m.type()}] ${m.text()}`),
   );
   page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
+  page.on('dialog', (dialog) => dialog.accept()); // e.g. "Start a new project?"
   page.on('response', (r) => r.status() >= 400 && errors.push(`[http ${r.status()}] ${r.url()}`));
   const commands = createCommands(page, server.url, errors);
   console.log(`serving ${server.url} (${flag('--prod') ? 'production build' : 'dev'})`);

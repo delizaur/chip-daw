@@ -6,8 +6,11 @@ import type { Project, Tick } from '../model/types';
 export type UiToEngine =
   | { type: 'loadProject'; project: Project }
   | { type: 'applyPatches'; patches: Patch[] }
-  /** Live input (computer keyboard, MIDI). Velocity is 1..127. */
-  | { type: 'noteOn'; trackId: string; pitch: number; velocity: number }
+  /**
+   * Live input (computer keyboard, MIDI). Velocity is 1..127. `record: false` plays without
+   * recording (piano roll auditions).
+   */
+  | { type: 'noteOn'; trackId: string; pitch: number; velocity: number; record?: boolean }
   | { type: 'noteOff'; trackId: string; pitch: number }
   /** Releases every note on every track (e.g. when the window loses focus). */
   | { type: 'allNotesOff' }

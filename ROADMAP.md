@@ -18,14 +18,14 @@ Each phase ends with something usable. Data structures for later features (walls
 - [x] Preset editor panel rendering a synth's params from its descriptor
 - [x] Engine unit tests rendering to buffers
 
-## Phase 2: Arrange a song
+## Phase 2: Arrange a song ✅
 - [x] Transport: play/stop, tick clock, BPM, metronome
 - [x] Tracks (count from `DEFAULT_TRACK_COUNT`, currently 8); number keys select a track; mute/solo/volume in the right sidebar
 - [x] Record MIDI into clips (engine-stamped, latency-compensated), with overdub mode
 - [x] Canvas arrangement view: clips shown as boxes; select, drag, copy/paste, delete, resize
-- [ ] Piano roll: draw, move, resize and delete notes; velocity; grid snap/quantize
-- [ ] Undo/redo wired to every edit (done for everything so far; the piano roll will follow)
-- [ ] Project import/export (`.chip`) + IndexedDB autosave/restore
+- [x] Piano roll: draw, move, resize and delete notes; velocity; grid snap/quantize
+- [x] Undo/redo wired to every edit
+- [x] Project import/export (`.chip`) + IndexedDB autosave/restore
 
 ## Phase 3: Preset pipeline
 - [ ] Full box chain: sequencers → synth → effects, added, removed, reordered and replaced from a list

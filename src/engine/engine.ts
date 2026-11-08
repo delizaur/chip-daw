@@ -85,7 +85,9 @@ export class Engine {
         break;
       case 'noteOn':
         this.#tracksById.get(message.trackId)?.noteOn(message.pitch, message.velocity);
-        this.#recordNoteOn(message.trackId, message.pitch, message.velocity);
+        if (message.record !== false) {
+          this.#recordNoteOn(message.trackId, message.pitch, message.velocity);
+        }
         break;
       case 'noteOff':
         this.#tracksById.get(message.trackId)?.noteOff(message.pitch);

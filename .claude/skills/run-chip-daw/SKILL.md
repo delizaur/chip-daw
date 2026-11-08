@@ -24,7 +24,7 @@ npm install
 
 ## Run (agent path)
 
-End-to-end smoke check (~15 s). Prints PASS/FAIL lines, exits 1 on any failure:
+End-to-end smoke check (~25 s). Prints PASS/FAIL lines, exits 1 on any failure:
 
 ```bash
 node .claude/skills/run-chip-daw/driver.mjs smoke
@@ -34,10 +34,14 @@ It checks: audio starts on the first click; holding `A` plays a note (meter > 0)
 goes silent; the preset editor's wave selector and Attack knob change the synth as single undo
 steps that Ctrl+Z restores; `X`/`Z` shift the keyboard octave; the master fader raises the meter and
 undoes; mute toggles; key `3` selects track 3 and notes then play there; record + play + a held key
-makes a clip exactly as long as the recording, with notes visible live (one undo step); dragging the clip on the canvas moves it a bar later and a
-track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z restores; Space plays the clip back; MIDI can
-be enabled; and no console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`,
-`3-arrangement`, `4-light`) land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
+makes a clip exactly as long as the recording (one undo step); dragging the clip on the canvas
+moves it a bar later and a track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z restores; Space
+plays the clip back; double-clicks create a clip and open it in the piano roll, where drawing,
+moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
+and the notes play back; Export → New → Import round-trips the project and names it after the
+file; a reload restores the autosave; MIDI can be enabled; and no console errors or HTTP ≥400
+responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-light`) land in
+`tmp/run-chip-daw/` (gitignored). **Look at them.**
 
 Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
 (rebuilds `dist/`):
@@ -73,7 +77,7 @@ EOF
 | `keydown <key>` / `keyup <key>` | hold / release a key; `keydown KeyA` plays C4 until `keyup KeyA` |
 | `select <combobox name…> \| <option…>` | pick a `<select>` option, e.g. `select MIDI input \| Enable MIDI…` |
 | `text <css…>` | innerText of the first match, e.g. `text .keys` (keyboard octave/velocity) |
-| `click-at <css> <x> <y> [shift\|alt]` | click at a point relative to an element, e.g. `click-at canvas 112 10` (ruler, bar 2) |
+| `click-at <css> <x> <y> [shift\|alt]` | click at a point relative to an element, e.g. `click-at .timeline-canvas 112 10` (ruler, bar 2) |
 | `dblclick-at <css> <x> <y>` | double-click at a point (empty lane: creates a one-bar clip) |
 | `drag-at <css> <x1> <y1> <x2> <y2>` | pointer drag between element-relative points (move/resize clips) |
 | `meter-max <ms>` | highest meter level while polling for `<ms>`; use it to check playback without timing guesses |
@@ -89,6 +93,8 @@ EOF
 | `sleep <ms>` | wait |
 | `screenshot [name]` | save `tmp/run-chip-daw/<name>.png` |
 | `screenshot-element <name> <css…>` | crop to one element, e.g. `screenshot-element fader .meter-fader` |
+| `export-file <path>` | click Export and save the `.chip` download to `<path>` (relative to the repo) |
+| `import-file <path>` | click Import and choose `<path>` in the file dialog |
 | `errors` | console errors/warnings, page errors and HTTP ≥400 so far, or `none` |
 
 Options: `--prod` (production build), `--url <url>` (drive an already-running server),
@@ -96,16 +102,27 @@ Options: `--prod` (production build), `--url <url>` (drive an already-running se
 
 Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Go to start`, `Play` (its
 name becomes `Pause` while playing), `Record`, `Overdub`, `Metronome`, `Zoom in`, `Zoom out`,
-`Mute Track N`, `Solo Track N`, `Select Track N`; spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
+`Mute Track N`, `Solo Track N`, `Select Track N`, `New`, `Import`, `Export`, `Quantize`,
+`Quantize selected`, `Fit`; tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
+`1/32`; spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
 `Decay`, `Sustain`, `Release`, `Level`, `Transpose`, `Fine`; radios (wave) `12.5%`, `25%`, `50%`,
 `Tri`, `Noise`, `Metal`; combobox `MIDI input`. Piano keys (physical): `KeyA`…`Semicolon` play
 C4…E5, `KeyZ`/`KeyX` octave, `KeyC`/`KeyV` velocity, `Escape` releases all notes. Shortcuts:
-`Space` play/pause, `Home` go to start, `Delete`/`Backspace` delete clips, `Control+c`/`v`/`d`
-copy/paste/duplicate clips.
+`Space` play/pause, `Home` go to start, and on whichever editor was clicked last (piano roll →
+notes, else clips): `Delete`/`Backspace`, `Control+a`, `Control+c`/`v`/`d`; in the piano roll
+`ArrowUp`/`ArrowDown` transpose (Shift: octave), `ArrowLeft`/`ArrowRight` move by the grid.
+`Control+s` export, `Control+o` import.
 
-Timeline canvas coordinates (default zoom): ruler `y` 0–24, track `N` (0-based) lane centre
-`y = 24 + 56·N + 28`, `x = 112` px per bar (28 px per beat), so bar `B` (1-based) starts at
+Timeline canvas (`.timeline-canvas`, default zoom): ruler `y` 0–24, track `N` (0-based) lane
+centre `y = 24 + 56·N + 28`, `x = 112` px per bar (28 px per beat), so bar `B` (1-based) starts at
 `x = 112·(B−1)`. Read clip state with `eval chipDaw.session.project.tracks.flatMap(...)`.
+
+Piano roll canvas (`.piano-roll-canvas`, 1440×300 at the default viewport): it opens fitted to
+the clip, so for a clip of `L` ticks with no notes, `x(tick) = 56 + tick·(W − 68)/L` (tick
+relative to the clip start) and `y(pitch) = 20 + (top − pitch)·12 + 6` with
+`top = 66 + floor(floor((H − 76)/12)/2)` (75 at 300 px), where `W×H` is the canvas size (get it
+with `eval document.querySelector('.piano-roll-canvas').getBoundingClientRect()`). The velocity
+lane is the bottom 56 px. Read notes with `eval chipDaw.session.editing.clip.notes`.
 
 ## Run (human path)
 
@@ -168,6 +185,16 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   recorded time when you press Pause (or disarm Record). Its length depends on timing, so check
   it with a range, not an exact tick count. `eval chipDaw.session.liveTake` shows the pass in
   progress.
+- **Piano roll auditions ring for ~300 ms.** Clicking or dragging notes plays them (not
+  recorded). Wait ~600 ms after editing before checking that the meter is silent.
+- **Every run starts with empty storage.** Each driver run is a fresh browser context, so there's
+  no autosave from earlier runs. Within one run, `goto` reloads the page and the autosave (written
+  0.8 s after the last change) comes back.
+- **Dialogs are auto-accepted** by the driver (e.g. "Start a new project?" on `New`).
+- **Export needs the download fallback headless.** `export-file` sets
+  `window.showSaveFilePicker = undefined` first; the native save picker can't be automated.
+- **Screenshots right after a toggle show its color fading** (80 ms transition), e.g. the Play
+  button still green with a ▶ icon just after pausing. Not a bug; `sleep 200` before the shot.
 - **Reading the meter.** The raw level is `data-level` on `.top-bar .meter-fill` (the engine's
   linear peak over ~33 ms); the bar itself is drawn on a dB scale. One held default-preset note
   reads about 0.04. After the last note ends, the engine reports one 0 and then goes quiet, so

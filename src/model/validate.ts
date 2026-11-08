@@ -1,0 +1,103 @@
+import { ProjectFormatError } from './migrations';
+import type { Project } from './types';
+
+type Json = Record<string, unknown>;
+
+const isObject = (v: unknown): v is Json =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isString = (v: unknown): v is string => typeof v === 'string';
+
+function fail(path: string, expected: string): never {
+  throw new ProjectFormatError(`Invalid project file: ${path} should be ${expected}.`);
+}
+
+function requireArray(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) fail(path, 'a list');
+  return value;
+}
+
+function requireNumber(value: unknown, path: string): void {
+  if (!isNumber(value)) fail(path, 'a number');
+}
+
+function requireString(value: unknown, path: string): void {
+  if (!isString(value)) fail(path, 'text');
+}
+
+function checkBox(value: unknown, path: string): void {
+  if (!isObject(value)) fail(path, 'a box');
+  requireString(value.id, `${path}.id`);
+  requireString(value.type, `${path}.type`);
+  if (!isObject(value.params)) fail(`${path}.params`, 'a set of parameters');
+  for (const [key, param] of Object.entries(value.params))
+    requireNumber(param, `${path}.params.${key}`);
+}
+
+/**
+ * Checks that parsed, migrated JSON has the shape of a Project, so a damaged or foreign file
+ * fails with a clear message instead of breaking the app later. Extra fields are allowed.
+ */
+export function validateProject(value: unknown): Project {
+  if (!isObject(value)) fail('the file', 'a project');
+  requireNumber(value.formatVersion, 'formatVersion');
+  requireString(value.name, 'name');
+  requireNumber(value.masterVolume, 'masterVolume');
+
+  if (!isObject(value.tempoMap)) fail('tempoMap', 'a tempo map');
+  const tempos = requireArray(value.tempoMap.tempos, 'tempoMap.tempos');
+  const meters = requireArray(value.tempoMap.meters, 'tempoMap.meters');
+  if (tempos.length === 0) fail('tempoMap.tempos', 'non-empty');
+  if (meters.length === 0) fail('tempoMap.meters', 'non-empty');
+  tempos.forEach((t, i) => {
+    if (!isObject(t) || !isNumber(t.tick) || !isNumber(t.bpm) || t.bpm <= 0) {
+      fail(`tempoMap.tempos[${i}]`, 'a tempo');
+    }
+  });
+  meters.forEach((m, i) => {
+    if (!isObject(m) || !isNumber(m.tick) || !isNumber(m.numerator) || !isNumber(m.denominator)) {
+      fail(`tempoMap.meters[${i}]`, 'a time signature');
+    }
+  });
+
+  const tracks = requireArray(value.tracks, 'tracks');
+  if (tracks.length === 0) fail('tracks', 'non-empty');
+  tracks.forEach((track, t) => {
+    const path = `tracks[${t}]`;
+    if (!isObject(track)) fail(path, 'a track');
+    requireString(track.id, `${path}.id`);
+    requireString(track.name, `${path}.name`);
+    requireNumber(track.volume, `${path}.volume`);
+    const segments = requireArray(track.segments, `${path}.segments`);
+    if (segments.length === 0) fail(`${path}.segments`, 'non-empty');
+    segments.forEach((segment, s) => {
+      const sp = `${path}.segments[${s}]`;
+      if (!isObject(segment) || !isObject(segment.preset)) fail(sp, 'a preset segment');
+      requireNumber(segment.startTick, `${sp}.startTick`);
+      const preset = segment.preset;
+      checkBox(preset.synth, `${sp}.preset.synth`);
+      requireArray(preset.sequencers, `${sp}.preset.sequencers`).forEach((b, i) =>
+        checkBox(b, `${sp}.preset.sequencers[${i}]`),
+      );
+      requireArray(preset.effects, `${sp}.preset.effects`).forEach((b, i) =>
+        checkBox(b, `${sp}.preset.effects[${i}]`),
+      );
+    });
+    requireArray(track.clips, `${path}.clips`).forEach((clip, c) => {
+      const cp = `${path}.clips[${c}]`;
+      if (!isObject(clip)) fail(cp, 'a clip');
+      requireString(clip.id, `${cp}.id`);
+      requireNumber(clip.startTick, `${cp}.startTick`);
+      requireNumber(clip.lengthTicks, `${cp}.lengthTicks`);
+      requireArray(clip.automation, `${cp}.automation`);
+      requireArray(clip.notes, `${cp}.notes`).forEach((note, n) => {
+        const np = `${cp}.notes[${n}]`;
+        if (!isObject(note)) fail(np, 'a note');
+        for (const key of ['tick', 'durationTicks', 'pitch', 'velocity']) {
+          requireNumber(note[key], `${np}.${key}`);
+        }
+      });
+    });
+  });
+  return value as unknown as Project;
+}

@@ -5,20 +5,40 @@ import {
   deleteClips,
   placeClips,
   recordTake,
+  setProjectName,
   type ClipPlacement,
-  type RecordedNote,
   type ProjectCommand,
+  type RecordedNote,
 } from '../../model/commands';
+import { PPQ } from '../../model/constants';
 import { createProject } from '../../model/defaults';
 import { History } from '../../model/history';
+import { createId } from '../../model/ids';
+import {
+  addNotes,
+  deleteNotes,
+  updateNotes,
+  type ClipAddress,
+  type NoteChange,
+} from '../../model/note-commands';
+import {
+  parseProject,
+  projectFileName,
+  projectNameFromFile,
+  serializeProject,
+} from '../../model/project-file';
 import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
-import type { Clip, Project, Tick, Track } from '../../model/types';
+import type { Clip, Note, Project, Tick, Track } from '../../model/types';
+import { Autosaver, loadAutosave } from '../../persistence/autosave';
+import { openTextFile, saveTextFile } from '../../persistence/files';
 import { MAX_OCTAVE, MIN_OCTAVE, shiftVelocity } from '../input/computer-keyboard';
 
 export type AudioStatus = 'off' | 'starting' | 'running' | 'error';
 export type MidiStatus = 'off' | 'connecting' | 'ready' | 'unsupported' | 'error';
 /** Where a live note came from. Each source's held notes are tracked separately. */
 export type NoteSource = 'keyboard' | 'midi';
+/** Which editor keyboard shortcuts (delete, copy, arrows...) act on: the last one clicked. */
+export type FocusArea = 'arrangement' | 'pianoRoll';
 
 /** A recording pass in progress. */
 export interface LiveTake {
@@ -26,15 +46,26 @@ export interface LiveTake {
   notes: (RecordedNote & { held: boolean })[];
 }
 
+export interface Notice {
+  kind: 'info' | 'error';
+  text: string;
+}
+
+/** How long auditioned notes (piano roll) sound. */
+const PREVIEW_MS = 220;
+const NOTICE_MS = 5000;
+
 /**
  * App-wide state: the project (through its undo history), the audio engine, live input,
  * and UI state that isn't part of the project (selection, audio status...).
  *
- * Every project change flows History → `project` (for the UI) + patches → engine.
+ * Every project change flows History → `project` (for the UI) + patches → engine, and
+ * schedules an autosave.
  */
 class Session {
   readonly #history = new History<Project>(createProject());
   readonly #engine = new EngineBridge();
+  readonly #autosaver = new Autosaver(() => serializeProject(this.#history.state));
   readonly #midi = new MidiInputs(
     (message) => {
       if (message.type === 'noteOn') this.noteOn('midi', message.pitch, message.velocity);
@@ -52,12 +83,15 @@ class Session {
   project = $state.raw<Project>(this.#history.state);
   undoLabel = $state<string | undefined>();
   redoLabel = $state<string | undefined>();
+  notice = $state.raw<Notice | null>(null);
+  #noticeTimer: ReturnType<typeof setTimeout> | null = null;
 
   audioStatus = $state<AudioStatus>('off');
   audioError = $state<string | null>(null);
   masterPeak = $state(0);
 
   selectedTrackIndex = $state(0);
+  focusArea = $state<FocusArea>('arrangement');
 
   keyboardOctave = $state(4);
   keyboardVelocity = $state(100);
@@ -85,6 +119,16 @@ class Session {
   selectedClipIds = $state.raw<ReadonlySet<string>>(new Set());
   #clipboard: { trackOffset: number; clip: Clip }[] = [];
 
+  // Bottom panel and piano roll.
+  bottomTab = $state<'preset' | 'pianoRoll'>('preset');
+  /** The clip shown in the piano roll (follows a single selected clip). */
+  editingClip = $state.raw<ClipAddress | null>(null);
+  selectedNoteIds = $state.raw<ReadonlySet<string>>(new Set());
+  /** Piano roll snap grid in ticks. */
+  pianoRollGrid = $state<Tick>(PPQ / 4);
+  /** Notes copied in the piano roll, ticks relative to the first one. */
+  #noteClipboard: Note[] = [];
+
   constructor() {
     this.#history.subscribe(({ state, patches }) => {
       this.project = state;
@@ -93,7 +137,10 @@ class Session {
       if (this.selectedTrackIndex >= state.tracks.length) {
         this.selectedTrackIndex = Math.max(0, state.tracks.length - 1);
       }
-      if (patches.length > 0) this.#engine.send({ type: 'applyPatches', patches });
+      if (patches.length > 0) {
+        this.#engine.send({ type: 'applyPatches', patches });
+        this.#autosaver.schedule();
+      }
     });
     this.#engine.subscribe((message) => {
       if (message.type === 'meters') {
@@ -139,6 +186,12 @@ class Session {
 
   redo(): void {
     this.#history.redo();
+  }
+
+  showNotice(text: string, kind: Notice['kind'] = 'info'): void {
+    this.notice = { kind, text };
+    if (this.#noticeTimer !== null) clearTimeout(this.#noticeTimer);
+    this.#noticeTimer = setTimeout(() => (this.notice = null), NOTICE_MS);
   }
 
   // --- UI state ---------------------------------------------------------------------------
@@ -187,6 +240,13 @@ class Session {
 
   shiftVelocity(delta: 1 | -1): void {
     this.keyboardVelocity = shiftVelocity(this.keyboardVelocity, delta);
+  }
+
+  /** Auditions a note briefly on a track (piano roll clicks). Not recorded. */
+  previewNote(trackId: string, pitch: number, velocity = 100): void {
+    void this.startAudio();
+    this.#engine.send({ type: 'noteOn', trackId, pitch, velocity, record: false });
+    setTimeout(() => this.#engine.send({ type: 'noteOff', trackId, pitch }), PREVIEW_MS);
   }
 
   // --- Transport --------------------------------------------------------------------------
@@ -242,8 +302,16 @@ class Session {
 
   // --- Clips ------------------------------------------------------------------------------
 
+  /** Selects clips. A single selected clip also becomes the piano roll's clip. */
   selectClips(ids: Iterable<string>): void {
     this.selectedClipIds = new Set(ids);
+    if (this.selectedClipIds.size !== 1) return;
+    const [id] = this.selectedClipIds;
+    const track = this.project.tracks.find((t) => t.clips.some((c) => c.id === id));
+    if (track && id !== this.editingClip?.clipId) {
+      this.editingClip = { trackId: track.id, clipId: id! };
+      this.selectedNoteIds = new Set();
+    }
   }
 
   /** Clips in selection order of tracks, with their track index. */
@@ -271,8 +339,8 @@ class Session {
     }));
   }
 
-  /** Pastes at the playhead, starting on the selected track. */
-  paste(): void {
+  /** Pastes clips at the playhead, starting on the selected track. */
+  pasteClips(): void {
     if (this.#clipboard.length === 0) return;
     const at = this.position;
     const placements = this.#clipboard.flatMap(({ trackOffset, clip }) => {
@@ -306,7 +374,205 @@ class Session {
   #placeAndSelect(placements: ClipPlacement[], label: string): void {
     if (placements.length === 0) return;
     this.run(placeClips(placements, label));
-    this.selectedClipIds = new Set(placements.map((p) => p.clip.id));
+    this.selectClips(placements.map((p) => p.clip.id));
+  }
+
+  // --- Piano roll -------------------------------------------------------------------------
+
+  /** The piano roll's clip and its track, or null if there is none (or it was deleted). */
+  get editing(): { track: Track; trackIndex: number; clip: Clip } | null {
+    const address = this.editingClip;
+    if (!address) return null;
+    const trackIndex = this.project.tracks.findIndex((t) => t.id === address.trackId);
+    const track = this.project.tracks[trackIndex];
+    const clip = track?.clips.find((c) => c.id === address.clipId);
+    return track && clip ? { track, trackIndex, clip } : null;
+  }
+
+  openPianoRoll(trackIndex: number, clipId: string): void {
+    this.selectTrack(trackIndex);
+    this.selectClips([clipId]);
+    this.bottomTab = 'pianoRoll';
+    this.focusArea = 'pianoRoll';
+  }
+
+  selectNotes(ids: Iterable<string>): void {
+    this.selectedNoteIds = new Set(ids);
+  }
+
+  #selectedNotes(): Note[] {
+    const clip = this.editing?.clip;
+    return clip ? clip.notes.filter((n) => this.selectedNoteIds.has(n.id)) : [];
+  }
+
+  /**
+   * Arrow keys in the piano roll: transpose (semitones) or move (grid steps) the selection.
+   * Returns false when there's nothing to nudge, so the key keeps its default behaviour.
+   */
+  nudgeNotes(semitones: number, steps: number): boolean {
+    const editing = this.editing;
+    if (!this.#notesFocused() || !editing) return false;
+    const notes = this.#selectedNotes();
+    if (notes.length === 0) return false;
+    const dt = steps * this.pianoRollGrid;
+    const changes: NoteChange[] = notes.map((n) => ({
+      id: n.id,
+      pitch: n.pitch + semitones,
+      tick: Math.min(editing.clip.lengthTicks - 1, Math.max(0, n.tick + dt)),
+    }));
+    this.run(updateNotes(this.editingClip!, changes, semitones ? 'Transpose' : 'Move notes'));
+    if (semitones && notes.length === 1) {
+      this.previewNote(editing.track.id, Math.min(127, Math.max(0, notes[0]!.pitch + semitones)));
+    }
+    return true;
+  }
+
+  // --- Commands that act on the focused editor (notes in the piano roll, else clips) ---
+
+  #notesFocused(): boolean {
+    return this.focusArea === 'pianoRoll' && this.bottomTab === 'pianoRoll' && !!this.editing;
+  }
+
+  deleteSelection(): void {
+    if (this.#notesFocused()) {
+      if (this.selectedNoteIds.size === 0) return;
+      this.run(deleteNotes(this.editingClip!, this.selectedNoteIds));
+      this.selectedNoteIds = new Set();
+    } else {
+      this.deleteSelectedClips();
+    }
+  }
+
+  copySelection(): void {
+    if (!this.#notesFocused()) return this.copySelectedClips();
+    const notes = this.#selectedNotes();
+    if (notes.length === 0) return;
+    const first = Math.min(...notes.map((n) => n.tick));
+    this.#noteClipboard = notes.map((n) => ({ ...n, tick: n.tick - first }));
+  }
+
+  /** In the piano roll: pastes notes at the playhead (or the clip start if it's outside). */
+  paste(): void {
+    const editing = this.editing;
+    if (!this.#notesFocused() || !editing) return this.pasteClips();
+    if (this.#noteClipboard.length === 0) return;
+    const { clip } = editing;
+    const inside =
+      this.position >= clip.startTick && this.position < clip.startTick + clip.lengthTicks;
+    const at = inside ? this.position - clip.startTick : 0;
+    this.#addNotesAndSelect(
+      this.#noteClipboard.map((n) => ({ ...n, id: createId(), tick: at + n.tick })),
+      'Paste notes',
+    );
+  }
+
+  duplicateSelection(): void {
+    if (!this.#notesFocused()) return this.duplicateSelectedClips();
+    const notes = this.#selectedNotes();
+    if (notes.length === 0) return;
+    const start = Math.min(...notes.map((n) => n.tick));
+    const end = Math.max(...notes.map((n) => n.tick + n.durationTicks));
+    this.#addNotesAndSelect(
+      notes.map((n) => ({ ...n, id: createId(), tick: n.tick + (end - start) })),
+      'Duplicate notes',
+    );
+  }
+
+  selectAll(): void {
+    if (this.#notesFocused()) {
+      this.selectNotes(this.editing!.clip.notes.map((n) => n.id));
+    } else {
+      this.selectClips(this.project.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+    }
+  }
+
+  clearSelection(): void {
+    if (this.#notesFocused()) this.selectedNoteIds = new Set();
+    else this.selectedClipIds = new Set();
+  }
+
+  #addNotesAndSelect(notes: Note[], label: string): void {
+    if (!this.editingClip || notes.length === 0) return;
+    this.run(addNotes(this.editingClip, notes, label));
+    this.selectedNoteIds = new Set(notes.map((n) => n.id));
+  }
+
+  // --- Files ------------------------------------------------------------------------------
+
+  /** Replaces the project (open, new, restore): clears undo, selection and transport state. */
+  #loadProject(project: Project): void {
+    this.pause();
+    this.seek(0);
+    this.allNotesOff();
+    this.liveTake = null;
+    this.selectedClipIds = new Set();
+    this.selectedNoteIds = new Set();
+    this.editingClip = null;
+    this.bottomTab = 'preset';
+    this.selectedTrackIndex = 0;
+    this.#history.reset(project);
+    this.undoLabel = undefined;
+    this.redoLabel = undefined;
+    void this.#autosaver.flush();
+  }
+
+  newProject(): void {
+    const hasWork = this.#history.canUndo || this.project.tracks.some((t) => t.clips.length > 0);
+    if (hasWork && !confirm('Start a new project? Export this one first if you want to keep it.')) {
+      return;
+    }
+    this.#loadProject(createProject());
+    this.showNotice('New project');
+  }
+
+  async importProject(): Promise<void> {
+    try {
+      const file = await openTextFile();
+      if (!file) return;
+      const project = parseProject(file.text);
+      this.#loadProject({ ...project, name: projectNameFromFile(file.name) });
+      this.showNotice(`Opened ${file.name}`);
+    } catch (error) {
+      this.showNotice(error instanceof Error ? error.message : String(error), 'error');
+    }
+  }
+
+  async exportProject(): Promise<void> {
+    try {
+      const name = await saveTextFile(
+        serializeProject(this.project),
+        projectFileName(this.project),
+      );
+      if (!name) return;
+      const newName = projectNameFromFile(name);
+      if (newName !== this.project.name) this.run(setProjectName(newName));
+      this.showNotice(`Saved ${name}`);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.showNotice(`Couldn't save: ${reason}`, 'error');
+    }
+  }
+
+  /** Restores the autosaved project on startup, unless the user already started editing. */
+  async restoreAutosave(): Promise<void> {
+    let text: string | null;
+    try {
+      text = await loadAutosave();
+    } catch {
+      return; // storage unavailable: start fresh
+    }
+    if (!text || this.#history.canUndo) return;
+    try {
+      this.#loadProject(parseProject(text));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.showNotice(`Couldn't restore the autosaved project: ${reason}`, 'error');
+    }
+  }
+
+  /** Saves immediately (e.g. when the page is being hidden or closed). */
+  flushAutosave(): Promise<void> {
+    return this.#autosaver.flush();
   }
 
   // --- MIDI -------------------------------------------------------------------------------

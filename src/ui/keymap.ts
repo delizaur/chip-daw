@@ -5,7 +5,8 @@
  * Combos are written like "mod+shift+z" ("mod" = Ctrl on Windows/Linux, Cmd on macOS).
  * Digits use the physical key ("digit1"), so track keys work on any keyboard layout.
  */
-export type KeyHandler = (event: KeyboardEvent) => void;
+/** Return false to leave the key unhandled (its default behaviour then happens). */
+export type KeyHandler = (event: KeyboardEvent) => void | boolean;
 
 type KeyEventLike = Pick<
   KeyboardEvent,
@@ -40,8 +41,7 @@ export function installKeymap(bindings: Record<string, KeyHandler>): () => void 
     if (event.defaultPrevented || isTextInput(event.target)) return;
     const handler = bindings[comboFromEvent(event)];
     if (!handler) return;
-    event.preventDefault();
-    handler(event);
+    if (handler(event) !== false) event.preventDefault();
   };
   // Buttons activate on Space's keyup; stop that when Space is a shortcut (play/pause), so a
   // focused button isn't pressed as well.

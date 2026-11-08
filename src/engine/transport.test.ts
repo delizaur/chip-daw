@@ -213,6 +213,17 @@ describe('recording', () => {
     expect(takes(messages)).toEqual([{ startTick: 0, endTick: expect.any(Number), notes: [] }]);
   });
 
+  it('does not record auditions', () => {
+    const { engine, messages, trackId, render } = setup();
+    engine.handle({ type: 'setRecord', armed: true });
+    engine.handle({ type: 'play' });
+    engine.handle({ type: 'noteOn', trackId, pitch: 60, velocity: 90, record: false });
+    render(0.1);
+    engine.handle({ type: 'noteOff', trackId, pitch: 60 });
+    engine.handle({ type: 'pause' });
+    expect(takes(messages)[0]!.notes).toEqual([]);
+  });
+
   it('does not record when not armed, or when stopped', () => {
     const { engine, messages, trackId, render } = setup();
     engine.handle({ type: 'play' });

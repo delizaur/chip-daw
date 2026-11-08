@@ -274,3 +274,14 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
     },
   };
 }
+
+// --- Project -------------------------------------------------------------------------------
+
+export function setProjectName(name: string): ProjectCommand {
+  return {
+    label: 'Rename project',
+    recipe: (project) => {
+      project.name = name.trim() || 'Untitled';
+    },
+  };
+}

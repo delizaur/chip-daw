@@ -4,7 +4,8 @@
   Timeline mouse/touch:
     ruler           click or drag to move the playhead
     clip            click to select (Shift: add/remove), drag to move (also to other tracks),
-                    drag an edge to resize; Alt while dragging disables snapping
+                    drag an edge to resize, double-click to open it in the piano roll;
+                    Alt while dragging disables snapping
     empty lane      click to select the track (and place the playhead when stopped),
                     double-click to create an empty one-bar clip
     wheel           Shift+wheel or horizontal wheel scrolls, Ctrl/Cmd+wheel zooms
@@ -195,6 +196,7 @@
 
   function onpointerdown(event: PointerEvent) {
     if (event.button !== 0 || !canvas) return;
+    session.focusArea = 'arrangement';
     const { x, y } = point(event);
     const hit = hitTest(tracks, view, x, y);
     canvas.setPointerCapture(event.pointerId);
@@ -331,6 +333,8 @@
     const hit = hitTest(tracks, view, x, y);
     if (hit.kind === 'lane') {
       session.createEmptyClip(hit.trackIndex, floorTo(hit.tick, ticksPerBar(meter)));
+    } else if (hit.kind === 'clip') {
+      session.openPianoRoll(hit.trackIndex, hit.clip.id);
     }
   }
 </script>
