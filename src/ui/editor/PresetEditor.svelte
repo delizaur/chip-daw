@@ -114,6 +114,8 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
+    /* Room after the last item when scrolled all the way right. */
+    padding-right: var(--space-4);
   }
 
   .add {

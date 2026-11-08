@@ -89,8 +89,12 @@
       'bottom bottom bottom';
   }
 
+  /* Each area fills its grid cell and never grows past it: wide content (a long preset chain)
+     scrolls inside its own panel instead of stretching the page. */
   .app > div {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     min-height: 0;
     min-width: 0;
   }

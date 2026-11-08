@@ -65,3 +65,10 @@ h3 {
   font-size: var(--text-s);
   line-height: 1.5;
 }
+
+/* Dropdown lists: give options the app's colors. Otherwise some browsers (Chrome on Windows)
+   draw the open list with a white background but the select's light text color. */
+select option {
+  background-color: var(--panel-raised);
+  color: var(--ink);
+}
