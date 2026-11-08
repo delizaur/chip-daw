@@ -1,4 +1,4 @@
-import { parseMidiMessage, type MidiNoteMessage } from './midi-message';
+import { isRealtimeMessage, parseMidiMessage, type MidiNoteMessage } from './midi-message';
 
 export interface MidiDevice {
   id: string;
@@ -21,13 +21,20 @@ export class MidiInputs {
   #selection: MidiSelection = 'all';
   readonly #onMessage: (message: MidiNoteMessage) => void;
   readonly #onDevicesChange: (devices: MidiDevice[]) => void;
+  readonly #onActivity: (data: Uint8Array, input: MIDIInput) => void;
 
+  /**
+   * `onActivity` sees every incoming message (except clock/active-sensing), parsed or not, so
+   * the UI can show that a device is sending.
+   */
   constructor(
     onMessage: (message: MidiNoteMessage) => void,
     onDevicesChange: (devices: MidiDevice[]) => void,
+    onActivity: (data: Uint8Array, input: MIDIInput) => void = () => {},
   ) {
     this.#onMessage = onMessage;
     this.#onDevicesChange = onDevicesChange;
+    this.#onActivity = onActivity;
   }
 
   async enable(): Promise<MidiDevice[]> {
@@ -66,6 +73,7 @@ export class MidiInputs {
 
   readonly #handle = (event: MIDIMessageEvent) => {
     if (!event.data) return;
+    if (!isRealtimeMessage(event.data)) this.#onActivity(event.data, event.target as MIDIInput);
     const message = parseMidiMessage(event.data);
     if (message) this.#onMessage(message);
   };

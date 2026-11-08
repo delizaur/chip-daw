@@ -99,6 +99,13 @@ function createCommands(page, url, errors) {
       const label = words.slice(bar + 1).join(' ');
       await page.getByRole('combobox', { name, exact: true }).selectOption({ label });
     },
+    /**
+     * midi <byte> <byte> ...: sends a message from the fake MIDI keyboard (decimal or 0x hex),
+     * e.g. "midi 0x90 60 100" (note on C4) and "midi 0x80 60 0" (note off).
+     */
+    async midi(bytes) {
+      await page.evaluate((data) => window.__fakeMidi(data), bytes.map(Number));
+    },
     /** text <css selector...>: innerText of the first match. */
     async text(selector) {
       return page.locator(selector.join(' ')).first().innerText();
@@ -453,11 +460,26 @@ async function smoke(c) {
   await c.sleep(['500']);
   check((await clips()).split(' ').length === 3, 'reloading restores the autosaved project');
 
-  // MIDI (permission granted by the driver; there are no devices in a headless browser).
+  // MIDI, through the driver's fake keyboard.
   await c.select(['MIDI', 'input', '|', 'Enable', 'MIDI…']);
-  await c.sleep(['1000']);
+  await c.sleep(['500']);
   const midi = await c.eval(["document.querySelector('.midi-select').selectedOptions[0].text"]);
-  check(/^MIDI: (no devices|all inputs)$/.test(JSON.parse(midi)), `MIDI can be enabled (${midi})`);
+  check(JSON.parse(midi) === 'MIDI: all inputs', `MIDI can be enabled (${midi})`);
+  await c.sleep(['600']); // let earlier sounds fade
+  await c.midi(['0x90', '72', '110']);
+  const midiLevel = await c['meter-max'](['400']);
+  check(midiLevel > 0.02, `a MIDI note plays (meter ${midiLevel.toFixed(3)})`);
+  const led = await c.attr(['title', 'img', 'MIDI', 'activity']);
+  check(
+    led === 'Last MIDI message: Note on C5 vel 110 · ch 1 (Fake MIDI keyboard)',
+    `the activity light shows the message (${led})`,
+  );
+  await c.midi(['0x80', '72', '0']);
+  await c.sleep(['500']);
+  check((await c['meter-max'](['200'])) === 0, 'MIDI note-off stops it');
+  await c.select(['MIDI', 'input', '|', 'MIDI', 'off']);
+  await c.midi(['0x90', '72', '110']);
+  check((await c['meter-max'](['300'])) === 0, "selecting 'MIDI off' ignores the keyboard");
 
   await c.theme(['light']);
   await c.screenshot(['5-light']);
@@ -484,6 +506,34 @@ try {
     deviceScaleFactor: Number(option('--scale', '1')),
   });
   await context.grantPermissions(['midi', 'midi-sysex']);
+  // A fake MIDI keyboard replaces Web MIDI: an automated browser doesn't receive messages from
+  // real devices (verified with a real keyboard), so tests play through this instead (`midi`).
+  await context.addInitScript(() => {
+    const input = {
+      id: 'fake-keyboard',
+      name: 'Fake MIDI keyboard',
+      manufacturer: 'chip-daw tests',
+      type: 'input',
+      state: 'connected',
+      connection: 'open',
+      onmidimessage: null,
+      open: async () => input,
+      close: async () => input,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const access = {
+      inputs: new Map([[input.id, input]]),
+      outputs: new Map(),
+      sysexEnabled: false,
+      onstatechange: null,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    navigator.requestMIDIAccess = async () => access;
+    window.__fakeMidi = (bytes) =>
+      input.onmidimessage?.({ data: new Uint8Array(bytes), target: input, currentTarget: input });
+  });
   const page = await context.newPage();
   const errors = [];
   page.on(

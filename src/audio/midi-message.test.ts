@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMidiMessage } from './midi-message';
+import { describeMidiMessage, isRealtimeMessage, parseMidiMessage } from './midi-message';
 
 describe('parseMidiMessage', () => {
   it('parses note on/off on any channel', () => {
@@ -23,5 +23,22 @@ describe('parseMidiMessage', () => {
     expect(parseMidiMessage([0xf8])).toBeNull(); // clock
     expect(parseMidiMessage([0xe0, 0, 64])).toBeNull(); // pitch bend
     expect(parseMidiMessage([])).toBeNull();
+  });
+});
+
+describe('describeMidiMessage', () => {
+  it('describes common messages', () => {
+    expect(describeMidiMessage([0x90, 60, 100])).toBe('Note on C4 vel 100 · ch 1');
+    expect(describeMidiMessage([0x91, 61, 0])).toBe('Note off C#4 · ch 2');
+    expect(describeMidiMessage([0x80, 69, 0])).toBe('Note off A4 · ch 1');
+    expect(describeMidiMessage([0xb0, 64, 127])).toBe('Control 64 = 127 · ch 1');
+    expect(describeMidiMessage([0xe0, 0, 64])).toBe('Pitch bend 0 · ch 1');
+    expect(describeMidiMessage([0xf0, 0x7e, 0xf7])).toBe('f0 7e f7');
+  });
+
+  it('recognises real-time messages', () => {
+    expect(isRealtimeMessage([0xf8])).toBe(true);
+    expect(isRealtimeMessage([0xfe])).toBe(true);
+    expect(isRealtimeMessage([0x90, 60, 1])).toBe(false);
   });
 });

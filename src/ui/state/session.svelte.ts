@@ -1,5 +1,6 @@
 import { EngineBridge } from '../../audio/bridge';
 import { MidiInputs, midiSupported, type MidiDevice, type MidiSelection } from '../../audio/midi';
+import { describeMidiMessage } from '../../audio/midi-message';
 import { cloneClip, createClip } from '../../model/clips';
 import {
   deleteClips,
@@ -68,13 +69,24 @@ class Session {
   readonly #autosaver = new Autosaver(() => serializeProject(this.#history.state));
   readonly #midi = new MidiInputs(
     (message) => {
-      if (message.type === 'noteOn') this.noteOn('midi', message.pitch, message.velocity);
-      else if (message.type === 'noteOff') this.noteOff('midi', message.pitch);
+      if (message.type === 'noteOn') {
+        // Browsers only start audio after a click or key press; MIDI doesn't count.
+        if (this.audioStatus !== 'running') {
+          this.showNotice(
+            'MIDI notes are arriving, but audio is off. Click anywhere to start audio.',
+          );
+        }
+        this.noteOn('midi', message.pitch, message.velocity);
+      } else if (message.type === 'noteOff') this.noteOff('midi', message.pitch);
       else this.releaseSource('midi');
     },
     (devices) => {
       this.midiDevices = devices;
       this.releaseSource('midi');
+    },
+    (data, input) => {
+      this.midiActivity++;
+      this.midiLastMessage = `${describeMidiMessage(data)} (${input.name ?? 'MIDI input'})`;
     },
   );
   /** "source:pitch" → id of the track the note was sent to, so note-offs reach the same track. */
@@ -100,6 +112,9 @@ class Session {
   midiError = $state<string | null>(null);
   midiDevices = $state.raw<MidiDevice[]>([]);
   midiSelection = $state<MidiSelection>('all');
+  /** Count of incoming MIDI messages (drives the activity light) and the latest one, described. */
+  midiActivity = $state(0);
+  midiLastMessage = $state<string | null>(null);
 
   // Transport (mirrors the engine; the engine owns the position while playing).
   playing = $state(false);
@@ -603,7 +618,9 @@ class Session {
 
   /** Starts audio. Must be called from a user gesture (click, key press). */
   async startAudio(): Promise<void> {
-    if (this.audioStatus === 'running' || this.audioStatus === 'starting') return;
+    // While 'starting', calling again is deliberate: the bridge reuses the pending start, and a
+    // context waiting for a user gesture gets resumed by this (newer) gesture.
+    if (this.audioStatus === 'running') return;
     this.audioStatus = 'starting';
     try {
       await this.#engine.start(() => [

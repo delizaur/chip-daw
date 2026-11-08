@@ -244,7 +244,7 @@ interface ParamDescriptor {
   - Number keys select tracks 1–9 (or fewer if the project has fewer tracks). Tracks beyond 9 are selected by clicking.
   - The computer keyboard is a piano using physical key positions: `A W S E D F T G Y H U J K O L P ;` play C to E an octave up, `Z`/`X` shift the octave, `C`/`V` step the velocity, `Escape` releases all notes. Keys with Ctrl/Cmd/Alt, and typing in text fields or selects, are left alone.
   - Live notes (keyboard and MIDI) play on the **selected track**. Each held note remembers its track, so its note-off reaches the same track even if the selection changes.
-  - MIDI: the top bar's selector requests Web MIDI access only when the user picks "Enable MIDI…" (browsers may prompt). It listens on all channels, to all inputs or one.
+  - MIDI: the top bar's selector requests Web MIDI access only when the user picks "Enable MIDI…" (browsers may prompt). It listens on all channels, to all inputs or one. Picking an option also starts audio, because browsers only start audio after a click or key press and MIDI notes don't count; if notes arrive while audio is off, a notice says to click. An activity light next to the selector blinks on every incoming message (except clock/active sensing) and its tooltip shows the last one, so users can see whether their device gets through.
   - Shortcuts are handled by one central keymap, not scattered listeners.
 - **Touch:**
   - No interaction depends on hover.

@@ -39,8 +39,9 @@ moves it a bar later and a track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z
 plays the clip back; double-clicks create a clip and open it in the piano roll, where drawing,
 moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
 and the notes play back; Export → New → Import round-trips the project and names it after the
-file; a reload restores the autosave; MIDI can be enabled; and no console errors or HTTP ≥400
-responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-light`) land in
+file; a reload restores the autosave; MIDI can be enabled and a fake MIDI keyboard's note plays,
+lights the MIDI activity light and stops on note-off, and is ignored with 'MIDI off'; and no
+console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-light`) land in
 `tmp/run-chip-daw/` (gitignored). **Look at them.**
 
 Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
@@ -93,6 +94,7 @@ EOF
 | `sleep <ms>` | wait |
 | `screenshot [name]` | save `tmp/run-chip-daw/<name>.png` |
 | `screenshot-element <name> <css…>` | crop to one element, e.g. `screenshot-element fader .meter-fader` |
+| `midi <byte…>` | send a message from the driver's fake MIDI keyboard, e.g. `midi 0x90 60 100` (note on C4), `midi 0x80 60 0` |
 | `export-file <path>` | click Export and save the `.chip` download to `<path>` (relative to the repo) |
 | `import-file <path>` | click Import and choose `<path>` in the file dialog |
 | `errors` | console errors/warnings, page errors and HTTP ≥400 so far, or `none` |
@@ -104,7 +106,7 @@ Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Go to star
 name becomes `Pause` while playing), `Record`, `Overdub`, `Metronome`, `Zoom in`, `Zoom out`,
 `Mute Track N`, `Solo Track N`, `Select Track N`, `New`, `Import`, `Export`, `Quantize`,
 `Quantize selected`, `Fit`; tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
-`1/32`; spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
+`1/32`; img `MIDI activity` (its `title` is the last message); spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
 `Decay`, `Sustain`, `Release`, `Level`, `Transpose`, `Fine`; radios (wave) `12.5%`, `25%`, `50%`,
 `Tri`, `Noise`, `Metal`; combobox `MIDI input`. Piano keys (physical): `KeyA`…`Semicolon` play
 C4…E5, `KeyZ`/`KeyX` octave, `KeyC`/`KeyV` velocity, `Escape` releases all notes. Shortcuts:
@@ -168,10 +170,15 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   values, focus with a click and use `press ArrowLeft` / `ArrowRight` (1% steps).
 - **Dark is the default theme, regardless of the OS setting.** `emulateMedia({ colorScheme })`
   does nothing; the light theme is `<html data-theme="light">`, which the `theme` command sets.
-- **MIDI needs the `midi-sysex` permission in headless Chrome.** Granting only `midi` still
-  rejects `requestMIDIAccess()` ("Permission to use Web MIDI API was not granted"), even though the
-  app doesn't ask for sysex. The driver grants both. There are no MIDI devices headless, so the
-  selector shows `MIDI: no devices`.
+- **An automated browser doesn't receive real MIDI.** Tested with a real keyboard (Evolution
+  MK-225C) plugged in and played: Chrome under Playwright, headless or visible, lists the device and
+  opens it without errors but receives zero messages, and so does virtualpiano.eu in that same
+  browser, though both work in a normal browser. So the driver replaces `navigator.requestMIDIAccess`
+  with a fake keyboard ("Fake MIDI keyboard") and the `midi` command plays it. Real-device
+  behaviour has to be checked by a person in a normal browser (the MIDI activity light shows
+  whether messages arrive).
+- **MIDI permission:** without the fake, headless Chrome needs `midi-sysex` granted (granting only
+  `midi` still rejects `requestMIDIAccess()`). The driver grants both.
 - **Closed `<select>` options aren't "visible".** `wait-text` on an option label times out; read
   `document.querySelector('.midi-select').selectedOptions[0].text` with `eval` instead.
 - **Piano keys are ignored while a `<select>` or text field has focus** (so typing doesn't play
