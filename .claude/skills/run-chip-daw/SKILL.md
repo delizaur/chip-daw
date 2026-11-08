@@ -34,7 +34,7 @@ It checks: audio starts on the first click; holding `A` plays a note (meter > 0)
 goes silent; the preset editor's wave selector and Attack knob change the synth as single undo
 steps that Ctrl+Z restores; `X`/`Z` shift the keyboard octave; the master fader raises the meter and
 undoes; mute toggles; key `3` selects track 3 and notes then play there; record + play + a held key
-makes a one-bar clip (one undo step); dragging the clip on the canvas moves it a bar later and a
+makes a clip exactly as long as the recording, with notes visible live (one undo step); dragging the clip on the canvas moves it a bar later and a
 track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z restores; Space plays the clip back; MIDI can
 be enabled; and no console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`,
 `3-arrangement`, `4-light`) land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
@@ -164,7 +164,10 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
 - **Clicking an empty lane moves the playhead when stopped.** It's how you place the paste
   position (`click-at canvas 2 10` on the ruler also works). Paste goes to the selected track.
 - **Recording records the selected track.** Record arm + Play, then hold keys; the clip appears
-  when you press Pause (or disarm Record), rounded out to whole bars.
+  as a red region with live notes while recording, and becomes a clip spanning exactly the
+  recorded time when you press Pause (or disarm Record). Its length depends on timing, so check
+  it with a range, not an exact tick count. `eval chipDaw.session.liveTake` shows the pass in
+  progress.
 - **Reading the meter.** The raw level is `data-level` on `.top-bar .meter-fill` (the engine's
   linear peak over ~33 ms); the bar itself is drawn on a dB scale. One held default-preset note
   reads about 0.04. After the last note ends, the engine reports one 0 and then goes quiet, so

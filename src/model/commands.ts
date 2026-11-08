@@ -3,7 +3,6 @@ import { constrainParam, getParamDescriptor } from './boxes/registry';
 import { absoluteNotes, clipEnd, createClip, placeClip, setClipStart } from './clips';
 import type { Command } from './history';
 import { createId } from './ids';
-import { ceilTo, floorTo, ticksPerBar } from './time';
 import type { BoxInstance, Clip, Note, Project, Tick, Track } from './types';
 
 export type ProjectCommand = Command<Project>;
@@ -217,15 +216,16 @@ export interface RecordedTake {
 const MIN_NOTE_TICKS = 15;
 
 /**
- * Turns a recorded take into clips, one per track that received notes. Each clip spans whole
- * bars around the recording. Without overdub, the new clip replaces what was underneath. With
- * overdub, it merges with every clip it overlaps into one clip containing all their notes.
+ * Turns a recorded take into clips, one per track that received notes. Each clip spans exactly
+ * the time that was recorded (from where recording started to where it stopped, stretched only
+ * to fit notes played slightly early), so nothing outside it is touched. Without overdub, the new
+ * clip replaces what was underneath. With overdub, it merges with every clip it overlaps into one
+ * clip containing all their notes.
  */
 export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand {
   return {
     label: overdub ? 'Overdub' : 'Record',
     recipe: (project) => {
-      const bar = ticksPerBar(project.tempoMap.meters[0]!);
       const byTrack = new Map<string, RecordedNote[]>();
       for (const note of take.notes) {
         byTrack.set(note.trackId, [...(byTrack.get(note.trackId) ?? []), note]);
@@ -235,8 +235,10 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
         const track = project.tracks.find((t) => t.id === trackId);
         if (!track) continue;
         const firstNote = Math.min(take.startTick, ...recorded.map((n) => n.startTick));
-        let start = floorTo(Math.max(0, firstNote), bar);
-        let end = Math.max(ceilTo(take.endTick, bar), start + bar);
+        let start = Math.max(0, Math.floor(firstNote));
+        let end = Math.ceil(
+          Math.max(take.endTick, start + MIN_NOTE_TICKS, ...recorded.map((n) => n.endTick)),
+        );
 
         const notes: Note[] = recorded.map((n) => {
           const tick = Math.max(start, Math.round(n.startTick));

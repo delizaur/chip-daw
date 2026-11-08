@@ -22,10 +22,18 @@ export interface TimelineScene {
   selectedTrack: number;
   selectedClips: ReadonlySet<string>;
   playhead: Tick;
-  /** Start of the current recording pass, drawn on the selected track; null when not recording. */
-  recordStart: Tick | null;
+  /** The recording pass in progress (drawn live); null when not recording. */
+  take: TakePreview | null;
   /** Clips being dragged: drawn at their new place, originals dimmed. */
   ghosts: ClipGhost[] | null;
+}
+
+/** A recording pass in progress, with notes mapped to track indices. */
+export interface TakePreview {
+  startTick: Tick;
+  /** Tracks to draw a recording region on (the selected track, plus any receiving notes). */
+  trackIndices: number[];
+  notes: { trackIndex: number; pitch: number; startTick: Tick; endTick: Tick; held: boolean }[];
 }
 
 /** Resolves "var(--name)" colors for the canvas, which can't read CSS variables itself. */
@@ -114,6 +122,44 @@ function drawClip(
   ctx.restore();
 }
 
+/** The recording pass: a red region per track up to the playhead, with its notes so far. */
+function drawTake(
+  ctx: CanvasRenderingContext2D,
+  scene: TimelineScene,
+  take: TakePreview,
+  color: (value: string) => string,
+) {
+  const { view, playhead } = scene;
+  const start = Math.min(take.startTick, ...take.notes.map((n) => n.startTick));
+  const x = tickToX(view, start);
+  const w = tickToX(view, playhead) - x;
+  if (w <= 0) return;
+  for (const trackIndex of take.trackIndices) {
+    const y = laneTop(trackIndex) + 3;
+    const h = LANE_HEIGHT - 6;
+    ctx.fillStyle = color('var(--c-red)');
+    ctx.globalAlpha = 0.3;
+    roundRect(ctx, x, y, w, h, 5);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    const notes = take.notes.filter((n) => n.trackIndex === trackIndex);
+    if (notes.length === 0) continue;
+    const low = Math.min(...notes.map((n) => n.pitch));
+    const high = Math.max(...notes.map((n) => n.pitch));
+    const span = Math.max(high - low, 8);
+    const inner = h - 10;
+    ctx.fillStyle = '#ffffff';
+    for (const n of notes) {
+      const nx = tickToX(view, n.startTick);
+      const end = n.held ? playhead : n.endTick;
+      const nw = Math.max(1.5, (end - n.startTick) * view.pixelsPerTick - 1);
+      const ny = y + 5 + inner - ((n.pitch - low + (span - (high - low)) / 2) / span) * inner;
+      ctx.fillRect(nx, ny - 1, nw, 2.5);
+    }
+  }
+}
+
 export function drawTimeline(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -177,18 +223,7 @@ export function drawTimeline(
     drawClip(ctx, scene, c, trackIndex, clip, startTick, lengthTicks, notesStart, 'ghost');
   }
 
-  // Recording pass in progress.
-  if (scene.recordStart !== null && scene.selectedTrack < scene.tracks.length) {
-    const x = tickToX(view, scene.recordStart);
-    const w = tickToX(view, scene.playhead) - x;
-    if (w > 0) {
-      ctx.fillStyle = color('var(--c-red)');
-      ctx.globalAlpha = 0.3;
-      roundRect(ctx, x, laneTop(scene.selectedTrack) + 3, w, LANE_HEIGHT - 6, 5);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  }
+  if (scene.take) drawTake(ctx, scene, scene.take, color);
 
   // Playhead.
   const px = Math.round(tickToX(view, scene.playhead)) + 0.5;

@@ -69,7 +69,8 @@ Knob moves during a gesture need no special message: each step is applied to the
 Engine → UI:
 - `transport(playing, tick)`: ~30 Hz while playing, and on every transport change. The UI extrapolates between reports for a smooth playhead.
 - `meters(masterPeak)` (per-track peaks later)
-- `recorded(take)`: when a recording pass ends (pause, seek, or record disarmed). Param-move recording comes with automation in Phase 4.
+- `takeStarted(startTick)` and `takeNote(index, note, held)`: a recording pass started, and each note as it's played and released, so the timeline shows the take live.
+- `recorded(take)`: when a recording pass ends (pause, seek, or record disarmed), even if empty, so the UI clears its live preview. Param-move recording comes with automation in Phase 4.
 
 Messages sent while audio is still starting are queued if they are notes or transport commands; project patches are dropped because the engine starts from a fresh snapshot.
 
@@ -203,7 +204,7 @@ interface ParamDescriptor {
   - renders to buffers in unit tests under Node.
 - **Transport:** advances a tick position each block. The tempo is read once per block, so a tempo change lands at most 128 samples late (linear tempo ramps arrive with Phase 4). Note events inside a block are applied at their exact sample offset: each track renders its synth in stretches between events.
 - **Clip playback:** each track flattens its clips into note-ons sorted by tick (rebuilt when its clips change, resuming from the current position). Each playing pitch remembers its own end tick, so editing a clip mid-note can't leave a stuck note. Notes that started before the play position aren't "chased" (they don't sound until their next start).
-- **Recording:** live notes are stamped with the position minus the output latency (what the player was hearing), then sent to the UI as a take. The UI turns it into clips with one undoable command: one clip per track, rounded out to whole bars. Without overdub it replaces what was underneath; with overdub it merges with the clips it overlaps.
+- **Recording:** live notes are stamped with the position minus the output latency (what the player was hearing), streamed to the UI as they're played (the timeline draws them live in the red recording region), then sent as a take when the pass ends. The UI turns it into clips with one undoable command: one clip per track, spanning exactly from where recording started to where it stopped (stretched only to fit notes played just before the start). It is not rounded to bars, so stopping mid-bar never replaces material you didn't record over. Without overdub it replaces what was underneath; with overdub it merges with the clips it overlaps.
 - **Metronome:** a short square blip on every beat while playing, accented on the downbeat. It's mixed straight into the master, not part of any track.
 - **Signal flow per track:** active segment(s) → sequencer chain → synth voices → effect chain → track volume/mute/solo → master bus → master volume → soft clipper.
 - **Real-time rules:**

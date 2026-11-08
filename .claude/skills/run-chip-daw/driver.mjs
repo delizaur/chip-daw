@@ -308,17 +308,29 @@ async function smoke(c) {
   await c.click(['button', 'Pause']);
   await c.click(['button', 'Record']);
   let now = await clips();
-  check(now === '2:0+3840/1', `recording makes a one-bar clip with the note (${now})`);
+  // The clip spans exactly the recorded time (~0.7 s ≈ 1300 ticks), not a whole bar.
+  const recorded = /^2:0\+(\d+)\/1$/.exec(now);
+  const length = Number(recorded?.[1]);
+  check(
+    !!recorded && length > 600 && length < 3840,
+    `recording makes a clip of the recorded length (${now})`,
+  );
   check((await undoTitle()).startsWith('Undo Record'), 'the take is one undo step');
 
-  await c['drag-at'](['canvas', '60', '164', '172', '220']);
+  await c['drag-at'](['canvas', '20', '164', '132', '220']);
   now = await clips();
-  check(now === '3:3840+3840/1', `dragging moves the clip a bar later and a track down (${now})`);
+  check(
+    now === `3:3840+${length}/1`,
+    `dragging moves the clip a bar later and a track down (${now})`,
+  );
   await c.press(['Control+d']);
   now = await clips();
-  check(now === '3:3840+3840/1 3:7680+3840/1', `Ctrl+D duplicates (${now})`);
+  check(
+    now === `3:3840+${length}/1 3:${3840 + length}+${length}/1`,
+    `Ctrl+D duplicates right after it (${now})`,
+  );
   await c.press(['Delete']);
-  check((await clips()) === '3:3840+3840/1', 'Delete removes the selected clip');
+  check((await clips()) === `3:3840+${length}/1`, 'Delete removes the selected clip');
   await c.press(['Control+z']);
   check((await clips()).split(' ').length === 2, 'Ctrl+Z restores it');
 

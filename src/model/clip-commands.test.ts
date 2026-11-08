@@ -112,13 +112,32 @@ describe('recordTake', () => {
     })),
   });
 
-  it('creates one clip per track, spanning whole bars, with notes relative to the clip', () => {
+  it('creates one clip per track spanning exactly the recorded time, notes relative to it', () => {
     const { h, id, clips } = setup();
     h.run(recordTake(take(id(1), [[60, BAR + 100, BAR + 500]], BAR + 50, 2 * BAR + 10), false));
-    expect(clips(1)).toEqual([[BAR, 3 * BAR]]);
+    expect(clips(1)).toEqual([[BAR + 50, 2 * BAR + 10]]);
     const note = h.state.tracks[1]!.clips[0]!.notes[0]!;
-    expect([note.tick, note.durationTicks, note.pitch]).toEqual([100, 400, 60]);
+    expect([note.tick, note.durationTicks, note.pitch]).toEqual([50, 400, 60]);
     expect(h.undoLabel).toBe('Record');
+  });
+
+  it('stopping just before the end of a bar leaves the rest of the bar alone', () => {
+    const { h, id, clips } = setup();
+    const later = BAR + PPQ * 2;
+    h.run(recordTake(take(id(0), [[67, later, later + 100]], 0, 2 * BAR), false));
+    h.run(recordTake(take(id(0), [[60, 100, 300]], 0, BAR - 100), false));
+    expect(clips(0)).toEqual([
+      [0, BAR - 100],
+      [BAR - 100, 2 * BAR],
+    ]);
+    const kept = h.state.tracks[0]!.clips[1]!;
+    expect(kept.notes.map((n) => [kept.startTick + n.tick, n.pitch])).toEqual([[later, 67]]);
+  });
+
+  it('starts the clip early enough for notes played just before recording started', () => {
+    const { h, id, clips } = setup();
+    h.run(recordTake(take(id(0), [[60, BAR - 30, BAR + 200]], BAR, 2 * BAR), false));
+    expect(clips(0)).toEqual([[BAR - 30, 2 * BAR]]);
   });
 
   it('gives very short taps a minimum length', () => {

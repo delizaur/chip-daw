@@ -15,8 +15,8 @@ const REPORT_RATE_HZ = 30;
 interface Take {
   startTick: Tick;
   notes: RecordedNote[];
-  /** "trackId:pitch" → the note still held. */
-  held: Map<string, RecordedNote>;
+  /** "trackId:pitch" → index in `notes` of the note still held. */
+  held: Map<string, number>;
 }
 
 /**
@@ -93,8 +93,7 @@ export class Engine {
         break;
       case 'allNotesOff':
         for (const track of this.#tracks) track.allNotesOff();
-        if (this.#take) for (const note of this.#take.held.values()) note.endTick = this.#position;
-        this.#take?.held.clear();
+        this.#releaseHeldTakeNotes();
         break;
       case 'play':
         if (this.#playing) break;
@@ -157,23 +156,39 @@ export class Engine {
     const recording = this.#recordArmed && this.#playing;
     if (recording && !this.#take) {
       this.#take = { startTick: this.#position, notes: [], held: new Map() };
+      this.#emit({ type: 'takeStarted', startTick: this.#position });
     } else if (!recording) {
       this.#endTake();
     }
   }
 
+  /** Ends the take and sends it to the UI (also when empty, so the UI can clear its preview). */
   #endTake(): void {
     const take = this.#take;
     if (!take) return;
+    for (const index of take.held.values()) take.notes[index]!.endTick = this.#position;
     this.#take = null;
-    for (const note of take.held.values()) note.endTick = this.#position;
-    if (take.notes.length === 0) return;
     const finished: RecordedTake = {
       startTick: take.startTick,
       endTick: this.#position,
       notes: take.notes,
     };
     this.#emit({ type: 'recorded', take: finished });
+  }
+
+  /** Sends a recorded note to the UI so it appears while recording. */
+  #emitTakeNote(take: Take, index: number, held: boolean): void {
+    this.#emit({ type: 'takeNote', index, note: { ...take.notes[index]! }, held });
+  }
+
+  #releaseHeldTakeNotes(): void {
+    const take = this.#take;
+    if (!take) return;
+    for (const index of take.held.values()) {
+      take.notes[index]!.endTick = Math.max(take.notes[index]!.startTick, this.#heardPosition());
+      this.#emitTakeNote(take, index, false);
+    }
+    take.held.clear();
   }
 
   /** Where the player heard the music when they played: now, minus output latency. */
@@ -186,20 +201,27 @@ export class Engine {
     const take = this.#take;
     if (!take) return;
     const key = `${trackId}:${pitch}`;
-    const previous = take.held.get(key);
-    if (previous) previous.endTick = this.#heardPosition();
     const tick = this.#heardPosition();
+    const previous = take.held.get(key);
+    if (previous !== undefined) {
+      take.notes[previous]!.endTick = tick;
+      this.#emitTakeNote(take, previous, false);
+    }
     const note: RecordedNote = { trackId, pitch, velocity, startTick: tick, endTick: tick };
-    take.notes.push(note);
-    take.held.set(key, note);
+    const index = take.notes.push(note) - 1;
+    take.held.set(key, index);
+    this.#emitTakeNote(take, index, true);
   }
 
   #recordNoteOff(trackId: string, pitch: number): void {
     const take = this.#take;
-    const note = take?.held.get(`${trackId}:${pitch}`);
-    if (!take || !note) return;
+    const key = `${trackId}:${pitch}`;
+    const index = take?.held.get(key);
+    if (!take || index === undefined) return;
+    const note = take.notes[index]!;
     note.endTick = Math.max(note.startTick, this.#heardPosition());
-    take.held.delete(`${trackId}:${pitch}`);
+    take.held.delete(key);
+    this.#emitTakeNote(take, index, false);
   }
 
   // --- Rendering ---------------------------------------------------------------------------

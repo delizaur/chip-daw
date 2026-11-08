@@ -16,7 +16,7 @@
   import type { Clip, Tick } from '../../model/types';
   import { session } from '../state/session.svelte';
   import { trackColor } from '../theme';
-  import { drawTimeline, type ClipGhost } from './draw';
+  import { drawTimeline, type ClipGhost, type TakePreview } from './draw';
   import {
     DEFAULT_PIXELS_PER_TICK,
     gridTicks,
@@ -78,6 +78,21 @@
 
   // --- Drawing ------------------------------------------------------------------------------
 
+  /** The live recording pass, with notes mapped from track ids to lanes. */
+  function takePreview(): TakePreview | null {
+    const take = session.liveTake;
+    if (!take) return null;
+    const indexOf = new Map(tracks.map((t, i) => [t.id, i]));
+    const notes = take.notes.flatMap((n) => {
+      const trackIndex = indexOf.get(n.trackId);
+      return trackIndex === undefined ? [] : [{ ...n, trackIndex }];
+    });
+    const trackIndices = [
+      ...new Set([session.selectedTrackIndex, ...notes.map((n) => n.trackIndex)]),
+    ];
+    return { startTick: take.startTick, trackIndices, notes };
+  }
+
   function draw() {
     if (!canvas || width === 0) return;
     const ratio = window.devicePixelRatio || 1;
@@ -99,7 +114,7 @@
       selectedTrack: session.selectedTrackIndex,
       selectedClips: session.selectedClipIds,
       playhead: session.playheadAt(),
-      recordStart: session.recordStart,
+      take: takePreview(),
       ghosts,
     });
   }
@@ -128,7 +143,7 @@
       session.selectedTrackIndex,
       session.selectedClipIds,
       session.position,
-      session.recordStart,
+      session.liveTake,
     ];
     draw();
   });

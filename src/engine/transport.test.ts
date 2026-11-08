@@ -181,6 +181,38 @@ describe('recording', () => {
     expect(note.endTick).toBeCloseTo(PPQ, -1);
   });
 
+  it('streams the pass to the UI while recording', () => {
+    const { engine, messages, trackId, render } = setup();
+    engine.handle({ type: 'seek', tick: PPQ });
+    engine.handle({ type: 'setRecord', armed: true });
+    engine.handle({ type: 'play' });
+    expect(messages.filter((m) => m.type === 'takeStarted')).toEqual([
+      { type: 'takeStarted', startTick: PPQ },
+    ]);
+
+    render(0.25);
+    engine.handle({ type: 'noteOn', trackId, pitch: 60, velocity: 90 });
+    const held = messages.filter((m) => m.type === 'takeNote').at(-1);
+    expect(held).toMatchObject({ index: 0, held: true, note: { pitch: 60 } });
+
+    render(0.25);
+    engine.handle({ type: 'noteOff', trackId, pitch: 60 });
+    const released = messages.filter((m) => m.type === 'takeNote').at(-1);
+    expect(released).toMatchObject({ index: 0, held: false });
+    if (released?.type === 'takeNote') {
+      expect(released.note.endTick - released.note.startTick).toBeCloseTo(PPQ / 2, -1);
+    }
+  });
+
+  it('reports a pass without notes, so the UI can clear its preview', () => {
+    const { engine, messages, render } = setup();
+    engine.handle({ type: 'setRecord', armed: true });
+    engine.handle({ type: 'play' });
+    render(0.1);
+    engine.handle({ type: 'pause' });
+    expect(takes(messages)).toEqual([{ startTick: 0, endTick: expect.any(Number), notes: [] }]);
+  });
+
   it('does not record when not armed, or when stopped', () => {
     const { engine, messages, trackId, render } = setup();
     engine.handle({ type: 'play' });

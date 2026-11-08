@@ -6,6 +6,7 @@ import {
   placeClips,
   recordTake,
   type ClipPlacement,
+  type RecordedNote,
   type ProjectCommand,
 } from '../../model/commands';
 import { createProject } from '../../model/defaults';
@@ -18,6 +19,12 @@ export type AudioStatus = 'off' | 'starting' | 'running' | 'error';
 export type MidiStatus = 'off' | 'connecting' | 'ready' | 'unsupported' | 'error';
 /** Where a live note came from. Each source's held notes are tracked separately. */
 export type NoteSource = 'keyboard' | 'midi';
+
+/** A recording pass in progress. */
+export interface LiveTake {
+  startTick: Tick;
+  notes: (RecordedNote & { held: boolean })[];
+}
 
 /**
  * App-wide state: the project (through its undo history), the audio engine, live input,
@@ -68,8 +75,11 @@ class Session {
   /** Last position reported by (or sent to) the engine. See `playheadAt` for a smooth value. */
   position = $state<Tick>(0);
   #positionTime = 0;
-  /** Where the current recording pass started, for drawing it; null when not recording. */
-  recordStart = $state<Tick | null>(null);
+  /**
+   * The recording pass in progress, as reported live by the engine (null when not recording).
+   * Held notes are still growing: draw them up to the playhead.
+   */
+  liveTake = $state.raw<LiveTake | null>(null);
 
   // Clip selection and clipboard (not undoable).
   selectedClipIds = $state.raw<ReadonlySet<string>>(new Set());
@@ -91,8 +101,15 @@ class Session {
       } else if (message.type === 'transport') {
         this.playing = message.playing;
         this.#setPosition(message.tick);
+      } else if (message.type === 'takeStarted') {
+        this.liveTake = { startTick: message.startTick, notes: [] };
+      } else if (message.type === 'takeNote') {
+        const notes = [...(this.liveTake?.notes ?? [])];
+        notes[message.index] = { ...message.note, held: message.held };
+        this.liveTake = { startTick: this.liveTake?.startTick ?? message.note.startTick, notes };
       } else if (message.type === 'recorded') {
-        this.run(recordTake(message.take, this.overdub));
+        this.liveTake = null;
+        if (message.take.notes.length > 0) this.run(recordTake(message.take, this.overdub));
       }
     });
   }
@@ -195,26 +212,22 @@ class Session {
     void this.startAudio();
     this.playing = true;
     this.#positionTime = performance.now();
-    if (this.recordArmed) this.recordStart = this.position;
     this.#engine.send({ type: 'play' });
   }
 
   pause(): void {
     this.playing = false;
-    this.recordStart = null;
     this.#engine.send({ type: 'pause' });
   }
 
   seek(tick: Tick): void {
     const target = Math.max(0, tick);
     this.#setPosition(target);
-    if (this.recordStart !== null) this.recordStart = target;
     this.#engine.send({ type: 'seek', tick: target });
   }
 
   toggleRecord(): void {
     this.recordArmed = !this.recordArmed;
-    this.recordStart = this.recordArmed && this.playing ? this.playheadAt() : null;
     this.#engine.send({ type: 'setRecord', armed: this.recordArmed });
   }
 
