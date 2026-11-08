@@ -58,7 +58,8 @@ UI → engine:
 - `loadProject(project)`: full snapshot (on open/import)
 - `applyPatches(patches)`: Immer patches after every command, including undo/redo
 - `transport(play | stop | seek(tick) | setRecord(on, overdub))`
-- `liveNote(trackIndex, on/off, pitch, velocity)`
+- `noteOn(trackId, pitch, velocity)` / `noteOff(trackId, pitch)`: live input (computer keyboard, MIDI)
+- `allNotesOff()`: releases everything (window blur, Escape, MIDI CC 120/123)
 
 Knob moves during a gesture need no special message: each step is applied to the project immediately and reaches the engine as a normal patch. The transaction only affects how the steps are grouped for undo.
 
@@ -157,11 +158,11 @@ Rules:
 
 ## Boxes
 
-Sequencers, synths and effects are all "boxes". Each box type is registered once with a **descriptor** that both the UI and the engine use:
+Sequencers, synths and effects are all "boxes". Each box type is registered once with a **descriptor** (in `src/model/boxes/`) that both the UI and the engine use:
 
 ```ts
 interface BoxDescriptor {
-  type: string;                   // "synth.pulse"
+  type: string;                   // "synth.chip"; stored in projects, so never rename one
   kind: 'sequencer' | 'synth' | 'effect';
   name: string;
   params: ParamDescriptor[];
@@ -172,16 +173,21 @@ interface ParamDescriptor {
   name: string;
   min: number; max: number; default: number;
   scale: 'linear' | 'exp';
-  steps?: string[];               // stepped/enum params, e.g. duty cycle 12.5/25/50/75%
-  unit?: string;
+  step?: number;                  // snap to multiples of this
+  steps?: string[];               // enum params: labels, shown as a segmented selector
+  unit?: 's' | '%' | 'st' | 'ct'; // display formatting
 }
 ```
 
-- The UI renders the preset editor (bottom panel) from descriptors, so a new box needs no UI code unless it wants a custom view.
+- The UI renders the preset editor (bottom panel) from descriptors, so a new box needs no UI code unless it wants a custom view. Enum params become segmented selectors, everything else a knob.
+- Adding a box: write its descriptor in `src/model/boxes/`, add it to the registry there, and add the engine implementation to `src/engine/boxes/registry.ts`. A test fails if a synth descriptor has no engine implementation.
+- Params missing from a saved box fall back to the descriptor's default, so new params don't need a migration.
 - Every param is automatable, because every param is a number with a known range.
 - Engine-side implementations:
   - **Sequencer:** note events in → note events out. Has access to transport info (tempo, tick), so an arp can emit notes in the future.
-  - **Synth:** note events in → stereo audio out. Owns a preallocated voice pool with voice stealing.
+  - **Synth:** note events in → stereo audio out. Owns a preallocated voice pool with voice stealing (`VoicePool`: a free voice, else the oldest releasing one, else the oldest).
+- **Synths so far:**
+  - `synth.chip` ("Chip"): NES-style pulse (12.5/25/50% duty, PolyBLEP band-limited), 4-bit stepped triangle, and 15-bit LFSR noise in long ("hiss") and short ("metal", pitched to the note) modes. 8 voices, ADSR (linear attack, exponential decay/release), level, transpose, fine tune.
   - **Effect:** processes a stereo buffer in place.
 
 ## Engine
@@ -223,7 +229,9 @@ interface ParamDescriptor {
 - **Base controls** (knob, slider, meter fader, toggle, segmented selector) form a small in-house kit that defines the OP-1-inspired look. Design tokens (colors, radii, type) are CSS custom properties. The theme is **dark by default**; a light theme exists behind `<html data-theme="light">` for a future setting.
 - **Input:**
   - Number keys select tracks 1–9 (or fewer if the project has fewer tracks). Tracks beyond 9 are selected by clicking.
-  - A computer-keyboard piano row plays notes.
+  - The computer keyboard is a piano using physical key positions: `A W S E D F T G Y H U J K O L P ;` play C to E an octave up, `Z`/`X` shift the octave, `C`/`V` step the velocity, `Escape` releases all notes. Keys with Ctrl/Cmd/Alt, and typing in text fields or selects, are left alone.
+  - Live notes (keyboard and MIDI) play on the **selected track**. Each held note remembers its track, so its note-off reaches the same track even if the selection changes.
+  - MIDI: the top bar's selector requests Web MIDI access only when the user picks "Enable MIDI…" (browsers may prompt). It listens on all channels, to all inputs or one.
   - Shortcuts are handled by one central keymap, not scattered listeners.
 - **Touch:**
   - No interaction depends on hover.
@@ -235,11 +243,11 @@ interface ParamDescriptor {
 
 ```
 src/
-  model/        types, defaults, migrations, commands (pure TS)
-  engine/       transport, mixer, voice allocation, boxes/{sequencers,synths,effects}, offline render (pure TS)
-  audio/        worklet entry, main-thread engine bridge, MIDI + keyboard input
-  persistence/  IndexedDB, file import/export, WAV encoder
-  ui/           Svelte components: layout panels, controls kit, canvas views
+  model/        types, defaults, migrations, commands, boxes/ (descriptors + registry) (pure TS)
+  engine/       tracks, mixer, envelopes, oscillators, boxes/ (synth implementations, voice pool) (pure TS)
+  audio/        worklet entry, main-thread engine bridge, Web MIDI input
+  persistence/  IndexedDB, file import/export, WAV encoder (Phase 2+)
+  ui/           Svelte components: layout panels, controls kit, preset editor, computer-keyboard input
 ```
 
 `model/` and `engine/` must not import from `ui/`, `audio/` or browser APIs. That keeps them testable in Node and portable, for example to a future Rust/WASM or native host.

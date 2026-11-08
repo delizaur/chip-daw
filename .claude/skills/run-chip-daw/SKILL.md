@@ -24,16 +24,18 @@ npm install
 
 ## Run (agent path)
 
-End-to-end smoke check (~4 s). Prints PASS/FAIL lines, exits 1 on any failure:
+End-to-end smoke check (~10 s). Prints PASS/FAIL lines, exits 1 on any failure:
 
 ```bash
 node .claude/skills/run-chip-daw/driver.mjs smoke
 ```
 
-It checks: audio starts on the first click, the master meter shows the test tone at the expected
-level (≈0.1586), a master-fader drag is one undo step and Ctrl+Z restores it, mute toggles, key `3`
-selects track 3, and no console errors or HTTP ≥400 responses. Screenshots
-(`1-initial`, `2-playing`, `3-light`) land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
+It checks: audio starts on the first click; holding `A` plays a note (meter > 0) and releasing it
+goes silent; the preset editor's wave selector and Attack knob change the synth as single undo
+steps that Ctrl+Z restores; `X`/`Z` shift the keyboard octave; the master fader raises the meter and
+undoes; mute toggles; key `3` selects track 3 and notes then play there; MIDI can be enabled; and no
+console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-editor`, `4-light`)
+land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
 
 Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
 (rebuilds `dist/`):
@@ -47,17 +49,16 @@ Custom flows: pipe commands to `script` mode. Each command's result is printed a
 ```bash
 node .claude/skills/run-chip-daw/driver.mjs script <<'EOF'
 goto
-status
-click button Play test tone
+click button Audio off · click to start
 wait-text Audio on
+keydown KeyA
 meter
-click radio Triangle
-drag slider Pitch 0 -100
-attr aria-valuetext slider Pitch
-theme dark
-viewport 820 1000
-screenshot narrow-dark
-eval document.title
+keyup KeyA
+click radio Noise
+drag slider Release 0 -60
+attr aria-valuetext slider Release
+text .keys
+screenshot-element editor .preset-editor
 errors
 EOF
 ```
@@ -67,6 +68,9 @@ EOF
 | `goto [path]` | load the app (waits for the Tracks panel) |
 | `click <role> <name…>` | click by ARIA role + exact accessible name, e.g. `click button Mute Track 2` |
 | `press <key>` | keyboard, e.g. `press Control+z`, `press 3` |
+| `keydown <key>` / `keyup <key>` | hold / release a key; `keydown KeyA` plays C4 until `keyup KeyA` |
+| `select <combobox name…> \| <option…>` | pick a `<select>` option, e.g. `select MIDI input \| Enable MIDI…` |
+| `text <css…>` | innerText of the first match, e.g. `text .keys` (keyboard octave/velocity) |
 | `drag <role> <name…> <dx> <dy>` | pointer drag from the element's center; knobs: negative dy = up = increase |
 | `attr <attribute> <role> <name…>` | print an attribute, e.g. `attr aria-valuetext slider Master` |
 | `wait-text <text…>` | wait up to 10 s for text to appear |
@@ -83,9 +87,11 @@ EOF
 Options: `--prod` (production build), `--url <url>` (drive an already-running server),
 `--out <dir>` (screenshot dir), `--scale 2` (high-DPI screenshots for inspecting details).
 
-Useful names: buttons `Play test tone` / `Stop test tone`, `Undo`, `Redo`, `Mute Track N`,
-`Solo Track N`, `Select Track N`; sliders `Master`, `Pitch`, `Track N volume`; radios `Square`,
-`Triangle`, `Sine`.
+Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Mute Track N`,
+`Solo Track N`, `Select Track N`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
+`Decay`, `Sustain`, `Release`, `Level`, `Transpose`, `Fine`; radios (wave) `12.5%`, `25%`, `50%`,
+`Tri`, `Noise`, `Metal`; combobox `MIDI input`. Piano keys (physical): `KeyA`…`Semicolon` play
+C4…E5, `KeyZ`/`KeyX` octave, `KeyC`/`KeyV` velocity, `Escape` releases all notes.
 
 ## Run (human path)
 
@@ -103,7 +109,7 @@ PID=$(netstat -ano | grep -E ":5173 .*LISTENING" | awk '{print $NF}' | head -1);
 ## Test
 
 ```bash
-npm test         # Vitest: model, engine (renders audio to buffers), control maths. 42 tests.
+npm test         # Vitest: model, engine + synth (renders audio to buffers), input, UI maths.
 npm run check    # svelte-check + tsc for the no-DOM core + vite config
 npm run lint     # also enforces that src/model and src/engine never import ui/audio code
 ```
@@ -112,8 +118,8 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
 
 - **Audio needs a user gesture.** The app starts audio on the first pointerdown/keydown, so a
   `click` must happen before `meter` shows anything. Headless Chrome runs the AudioWorklet fine.
-- **The driver always passes `--mute-audio`.** Without it, a headless run plays the test tone
-  through the machine's real speakers.
+- **The driver always passes `--mute-audio`.** Without it, a headless run plays notes through the
+  machine's real speakers.
 - **Read stdin before starting Vite/the browser.** In script mode, stdin arrived empty when read
   after `createServer()`/`chromium.launch()`. The driver reads it first; keep it that way.
 - **Fixed ports collide.** Port 5199 was already taken by another program on the dev machine. The
@@ -131,12 +137,18 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   values, focus with a click and use `press ArrowLeft` / `ArrowRight` (1% steps).
 - **Dark is the default theme, regardless of the OS setting.** `emulateMedia({ colorScheme })`
   does nothing; the light theme is `<html data-theme="light">`, which the `theme` command sets.
-- **Test-tone controls aren't undoable.** Waveform and Pitch are dev-only engine settings, not
-  project state, so `Control+z` after changing them does nothing. Use `Master`, track volume,
-  mute or solo to test undo.
+- **MIDI needs the `midi-sysex` permission in headless Chrome.** Granting only `midi` still
+  rejects `requestMIDIAccess()` ("Permission to use Web MIDI API was not granted"), even though the
+  app doesn't ask for sysex. The driver grants both. There are no MIDI devices headless, so the
+  selector shows `MIDI: no devices`.
+- **Closed `<select>` options aren't "visible".** `wait-text` on an option label times out; read
+  `document.querySelector('.midi-select').selectedOptions[0].text` with `eval` instead.
+- **Piano keys are ignored while a `<select>` or text field has focus** (so typing doesn't play
+  notes). After `select …`, click something else before `keydown KeyA`.
 - **Reading the meter.** The raw level is `data-level` on `.top-bar .meter-fill` (the engine's
-  linear peak over ~33 ms); the bar itself is drawn on a dB scale. The square test tone at default
-  master volume reads 0.25 × 0.8² → tanh → 0.1586.
+  linear peak over ~33 ms); the bar itself is drawn on a dB scale. One held default-preset note
+  reads about 0.04. After the last note ends, the engine reports one 0 and then goes quiet, so
+  `meter` returns exactly 0 when idle.
 
 ## Troubleshooting
 

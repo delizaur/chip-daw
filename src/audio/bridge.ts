@@ -7,11 +7,14 @@ const PROCESSOR_NAME = 'chip-engine';
 
 type Listener = (message: EngineToUi) => void;
 
+const LIVE_MESSAGES = new Set<UiToEngine['type']>(['noteOn', 'noteOff', 'allNotesOff']);
+
 /** Main-thread handle to the audio engine running in the AudioWorklet. */
 export class EngineBridge {
   #context: AudioContext | null = null;
   #node: AudioWorkletNode | null = null;
   #starting: Promise<void> | null = null;
+  #pending: UiToEngine[] = [];
   #listeners = new Set<Listener>();
 
   get running(): boolean {
@@ -44,16 +47,26 @@ export class EngineBridge {
       this.#context = context;
       this.#node = node;
       this.send({ type: 'loadProject', project: getProject() });
+      for (const message of this.#pending.splice(0)) this.send(message);
       await context.resume();
     } catch (error) {
+      this.#pending = [];
       await context.close();
       throw error;
     }
   }
 
-  /** Sends a message to the engine. Ignored until the engine has started. */
+  /**
+   * Sends a message to the engine. Before the engine exists, project patches are dropped
+   * (the engine loads a fresh snapshot when it starts), but live notes played while audio is
+   * starting are queued, so the key press that starts audio still sounds.
+   */
   send(message: UiToEngine): void {
-    this.#node?.port.postMessage(message);
+    if (this.#node) {
+      this.#node.port.postMessage(message);
+    } else if (this.#starting && LIVE_MESSAGES.has(message.type)) {
+      this.#pending.push(message);
+    }
   }
 
   subscribe(listener: Listener): () => void {

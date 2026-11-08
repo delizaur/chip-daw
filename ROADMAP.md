@@ -11,12 +11,12 @@ Each phase ends with something usable. Data structures for later features (walls
 - [x] Design tokens and base control kit: knob, slider, toggle, segmented selector
 - [x] App shell with the 5 layout regions
 
-## Phase 1: Make a sound
-- [ ] Box registry + descriptors
-- [ ] First synth: NES-style pulse (duty cycle) / triangle / noise, polyphonic voice pool, ADSR
-- [ ] Live input: computer-keyboard piano + Web MIDI device selector
-- [ ] Preset editor panel rendering a synth's params from its descriptor
-- [ ] Engine unit tests rendering to buffers
+## Phase 1: Make a sound ✅
+- [x] Box registry + descriptors
+- [x] First synth: NES-style pulse (duty cycle) / triangle / noise, polyphonic voice pool, ADSR
+- [x] Live input: computer-keyboard piano + Web MIDI device selector
+- [x] Preset editor panel rendering a synth's params from its descriptor
+- [x] Engine unit tests rendering to buffers
 
 ## Phase 2: Arrange a song
 - [ ] Transport: play/stop, tick clock, BPM, metronome

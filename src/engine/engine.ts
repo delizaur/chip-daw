@@ -2,7 +2,7 @@ import { applyPatches, enablePatches } from 'immer';
 import type { Project } from '../model/types';
 import { SmoothedValue, softClip, volumeToGain } from './dsp';
 import type { EngineToUi, UiToEngine } from './protocol';
-import { TestTone } from './test-tone';
+import { TrackRuntime } from './track';
 
 enablePatches();
 
@@ -21,8 +21,11 @@ export class Engine {
   readonly sampleRate: number;
   #project: Project | null = null;
   readonly #emit: (message: EngineToUi) => void;
-  readonly #testTone: TestTone;
+  #tracks: TrackRuntime[] = [];
+  readonly #tracksById = new Map<string, TrackRuntime>();
   readonly #masterGain: SmoothedValue;
+  #mixLeft = new Float32Array(128);
+  #mixRight = new Float32Array(128);
   readonly #meterInterval: number;
   #framesSinceMeter = 0;
   #masterPeak = 0;
@@ -31,7 +34,6 @@ export class Engine {
   constructor(sampleRate: number, emit: (message: EngineToUi) => void) {
     this.sampleRate = sampleRate;
     this.#emit = emit;
-    this.#testTone = new TestTone(sampleRate);
     this.#masterGain = new SmoothedValue(0, sampleRate);
     this.#meterInterval = Math.round(sampleRate / METER_RATE_HZ);
   }
@@ -44,31 +46,71 @@ export class Engine {
     switch (message.type) {
       case 'loadProject':
         this.#project = message.project;
+        this.#sync();
         break;
       case 'applyPatches':
-        if (this.#project) this.#project = applyPatches(this.#project, message.patches);
+        if (!this.#project) break;
+        this.#project = applyPatches(this.#project, message.patches);
+        this.#sync();
         break;
-      case 'testTone':
-        this.#testTone.settings = message.settings;
+      case 'noteOn':
+        this.#tracksById.get(message.trackId)?.noteOn(message.pitch, message.velocity);
+        break;
+      case 'noteOff':
+        this.#tracksById.get(message.trackId)?.noteOff(message.pitch);
+        break;
+      case 'allNotesOff':
+        for (const track of this.#tracks) track.allNotesOff();
         break;
     }
   }
 
+  /** Brings the runtime graph in line with the project. */
+  #sync(): void {
+    const project = this.#project;
+    if (!project) return;
+    this.#masterGain.target = volumeToGain(project.masterVolume);
+    const anySolo = project.tracks.some((t) => t.solo);
+    const seen = new Set<string>();
+    this.#tracks = project.tracks.map((track) => {
+      let runtime = this.#tracksById.get(track.id);
+      if (!runtime) {
+        runtime = new TrackRuntime(track.id, this.sampleRate);
+        this.#tracksById.set(track.id, runtime);
+      }
+      runtime.sync(track, !track.mute && (!anySolo || track.solo));
+      seen.add(track.id);
+      return runtime;
+    });
+    for (const id of this.#tracksById.keys()) if (!seen.has(id)) this.#tracksById.delete(id);
+  }
+
   /** Renders one block of stereo audio. `left` and `right` may be the same buffer. */
   process(left: Float32Array, right: Float32Array): void {
-    this.#masterGain.target = this.#project ? volumeToGain(this.#project.masterVolume) : 0;
-    let peak = this.#masterPeak;
+    const frames = left.length;
+    if (this.#mixLeft.length < frames) {
+      this.#mixLeft = new Float32Array(frames);
+      this.#mixRight = new Float32Array(frames);
+    }
+    const mixLeft = this.#mixLeft;
+    const mixRight = this.#mixRight;
+    mixLeft.fill(0, 0, frames);
+    mixRight.fill(0, 0, frames);
+    for (const track of this.#tracks) track.process(mixLeft, mixRight, frames);
 
-    for (let i = 0; i < left.length; i++) {
-      const sample = softClip(this.#testTone.next() * this.#masterGain.next());
-      left[i] = sample;
-      right[i] = sample;
-      const magnitude = Math.abs(sample);
+    let peak = this.#masterPeak;
+    for (let i = 0; i < frames; i++) {
+      const gain = this.#masterGain.next();
+      const l = softClip(mixLeft[i]! * gain);
+      const r = softClip(mixRight[i]! * gain);
+      left[i] = l;
+      right[i] = r;
+      const magnitude = Math.max(Math.abs(l), Math.abs(r));
       if (magnitude > peak) peak = magnitude;
     }
 
     this.#masterPeak = peak;
-    this.#framesSinceMeter += left.length;
+    this.#framesSinceMeter += frames;
     if (this.#framesSinceMeter >= this.#meterInterval) this.#reportMeters();
   }
 

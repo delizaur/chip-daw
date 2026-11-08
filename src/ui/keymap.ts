@@ -21,7 +21,8 @@ export function comboFromEvent(event: KeyEventLike): string {
   return parts.join('+');
 }
 
-function isTextInput(target: EventTarget | null): boolean {
+/** True for elements where keys should type text instead of triggering shortcuts. */
+export function isTextInput(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;

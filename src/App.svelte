@@ -1,9 +1,10 @@
 <script lang="ts">
   import Arrangement from './ui/layout/Arrangement.svelte';
-  import BottomPanel from './ui/layout/BottomPanel.svelte';
   import LeftSidebar from './ui/layout/LeftSidebar.svelte';
   import RightSidebar from './ui/layout/RightSidebar.svelte';
   import TopBar from './ui/layout/TopBar.svelte';
+  import PresetEditor from './ui/editor/PresetEditor.svelte';
+  import { installComputerKeyboard } from './ui/input/computer-keyboard';
   import { installKeymap, type KeyHandler } from './ui/keymap';
   import { session } from './ui/state/session.svelte';
 
@@ -13,10 +14,22 @@
       'mod+z': () => session.undo(),
       'mod+shift+z': () => session.redo(),
       'mod+y': () => session.redo(),
+      escape: () => session.allNotesOff(),
     };
     for (let i = 0; i < 9; i++) bindings[`digit${i + 1}`] = () => session.selectTrack(i);
     return installKeymap(bindings);
   });
+
+  // The computer keyboard plays notes on the selected track.
+  $effect(() =>
+    installComputerKeyboard({
+      octave: () => session.keyboardOctave,
+      noteOn: (pitch) => session.noteOn('keyboard', pitch, session.keyboardVelocity),
+      noteOff: (pitch) => session.noteOff('keyboard', pitch),
+      shiftOctave: (delta) => session.shiftOctave(delta),
+      shiftVelocity: (delta) => session.shiftVelocity(delta),
+    }),
+  );
 
   // Browsers only allow audio after a user gesture, so start it on the first interaction.
   $effect(() => {
@@ -39,7 +52,7 @@
   <div class="left"><LeftSidebar /></div>
   <div class="center"><Arrangement /></div>
   <div class="right"><RightSidebar /></div>
-  <div class="bottom"><BottomPanel /></div>
+  <div class="bottom"><PresetEditor /></div>
 </div>
 
 <style>

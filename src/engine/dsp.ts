@@ -4,9 +4,13 @@ export function volumeToGain(volume: number): number {
   return v * v;
 }
 
+/** Distance at which smoothing snaps to its target (an exponential never quite arrives). */
+const SNAP = 1e-6;
+
 /**
  * One-pole smoothing towards a target value, to avoid zipper noise when
- * parameters change. Allocation-free once constructed.
+ * parameters change. Allocation-free once constructed. Snaps to the target once within
+ * 1e-6, so a fade to 0 really reaches silence (and avoids denormal numbers).
  */
 export class SmoothedValue {
   current: number;
@@ -20,7 +24,9 @@ export class SmoothedValue {
   }
 
   next(): number {
-    this.current += (this.target - this.current) * this.#coefficient;
+    const difference = this.target - this.current;
+    this.current =
+      Math.abs(difference) < SNAP ? this.target : this.current + difference * this.#coefficient;
     return this.current;
   }
 }

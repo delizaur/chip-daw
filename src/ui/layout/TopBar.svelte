@@ -1,7 +1,9 @@
 <script lang="ts">
   import { setMasterVolume } from '../../model/commands';
   import MeterFader from '../controls/MeterFader.svelte';
+  import { noteName } from '../input/computer-keyboard';
   import { session } from '../state/session.svelte';
+  import MidiSelect from './MidiSelect.svelte';
 
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
   const mod = isMac ? '⌘' : 'Ctrl+';
@@ -58,6 +60,15 @@
   </div>
 
   <div class="spacer"></div>
+
+  <MidiSelect />
+  <span
+    class="keys"
+    title="Computer keyboard: A–; play notes on the selected track, Z/X octave, C/V velocity"
+  >
+    <span aria-hidden="true">⌨</span>
+    {noteName((session.keyboardOctave + 1) * 12)} · vel {session.keyboardVelocity}
+  </span>
 
   <MeterFader
     label="Master"
@@ -166,5 +177,12 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .keys {
+    font-family: var(--font-mono);
+    font-size: var(--text-s);
+    color: var(--ink-dim);
+    white-space: nowrap;
   }
 </style>

@@ -1,3 +1,4 @@
+import { createBox, DEFAULT_SYNTH_TYPE } from './boxes/registry';
 import { DEFAULT_BPM, DEFAULT_TRACK_COUNT, PROJECT_FORMAT_VERSION } from './constants';
 import { createId } from './ids';
 import type { Preset, Project, Track } from './types';
@@ -7,8 +8,7 @@ export function createPreset(name = 'Init'): Preset {
     id: createId(),
     name,
     sequencers: [],
-    // Params are filled from the box descriptor once the box registry exists (Phase 1).
-    synth: { id: createId(), type: 'synth.pulse', params: {} },
+    synth: createBox(DEFAULT_SYNTH_TYPE),
     effects: [],
   };
 }

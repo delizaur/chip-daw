@@ -67,7 +67,7 @@ async function launchBrowser() {
 // ---------------------------------------------------------------- commands
 
 function createCommands(page, url, errors) {
-  // "<role> <accessible name...>" -> locator, e.g. "button Play test tone", "slider Master"
+  // "<role> <accessible name...>" -> locator, e.g. "button Mute Track 2", "slider Master"
   const byRole = (words) =>
     page.getByRole(words[0], { name: words.slice(1).join(' '), exact: true });
   const meter = () =>
@@ -84,6 +84,24 @@ function createCommands(page, url, errors) {
     },
     async press([key]) {
       await page.keyboard.press(key);
+    },
+    /** keydown/keyup <key>: hold and release, e.g. "keydown KeyA" plays C4 until "keyup KeyA". */
+    async keydown([key]) {
+      await page.keyboard.down(key);
+    },
+    async keyup([key]) {
+      await page.keyboard.up(key);
+    },
+    /** select <combobox name...> | <option label...>, e.g. "select MIDI input | Enable MIDI…" */
+    async select(words) {
+      const bar = words.indexOf('|');
+      const name = words.slice(0, bar).join(' ');
+      const label = words.slice(bar + 1).join(' ');
+      await page.getByRole('combobox', { name, exact: true }).selectOption({ label });
+    },
+    /** text <css selector...>: innerText of the first match. */
+    async text(selector) {
+      return page.locator(selector.join(' ')).first().innerText();
     },
     /**
      * drag <role> <name...> <dx> <dy>: pointer drag starting at the element's center.
@@ -164,28 +182,60 @@ async function smoke(c) {
     console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`);
     if (!ok) failures.push(message);
   };
+  const value = (name) => c.attr(['aria-valuetext', 'slider', name]);
+  const undoTitle = () => c.attr(['title', 'button', 'Undo']);
 
   await c.goto([]);
   check((await c.status()).startsWith('Audio off'), 'audio starts off');
   await c.screenshot(['1-initial']);
 
-  await c.click(['button', 'Play', 'test', 'tone']);
+  await c.click(['button', 'Audio', 'off', '·', 'click', 'to', 'start']);
   await c['wait-text'](['Audio on']);
-  const level = await c.meter();
-  // square wave 0.25 × volumeToGain(0.8)=0.64 → tanh(0.16) ≈ 0.1586
-  check(Math.abs(level - 0.1586) < 0.01, `meter shows test tone (${level.toFixed(4)} ≈ 0.1586)`);
+  check((await c.meter()) === 0, 'silent until a note plays');
 
-  await c.drag(['slider', 'Master', '200', '0']);
-  const raised = await c.attr(['aria-valuetext', 'slider', 'Master']);
-  check(raised === '100%', `master fader drag 80% -> ${raised}`);
-  check((await c.meter()) > level + 0.05, 'meter rises with master volume');
+  // Computer keyboard: A = C4 on the selected track (track 1).
+  await c.keydown(['KeyA']);
+  const held = await c.meter();
+  check(held > 0.02, `holding A plays a note (meter ${held.toFixed(3)})`);
+  await c.screenshot(['2-note']);
+  await c.keyup(['KeyA']);
+  await c.sleep(['700']);
+  check((await c.meter()) === 0, 'releasing A stops the note');
+
+  // Preset editor, rendered from the chip synth's descriptor.
+  await c.click(['radio', 'Tri']);
+  check((await c.attr(['aria-checked', 'radio', 'Tri'])) === 'true', 'wave switches to triangle');
+  check((await undoTitle()).startsWith('Undo Change Wave'), 'wave change is undoable');
+  const attack = await value('Attack');
+  await c.drag(['slider', 'Attack', '0', '-60']);
   check(
-    (await c.attr(['title', 'button', 'Undo'])).startsWith('Undo Change master volume'),
-    'drag is one undo step',
+    (await value('Attack')) !== attack,
+    `attack knob drag ${attack} -> ${await value('Attack')}`,
   );
+  check((await undoTitle()).startsWith('Undo Change Attack'), 'knob drag is one undo step');
   await c.press(['Control+z']);
-  check((await c.attr(['aria-valuetext', 'slider', 'Master'])) === '80%', 'Ctrl+Z restores 80%');
+  check((await value('Attack')) === attack, 'Ctrl+Z restores attack');
+  await c.press(['Control+z']);
+  check((await c.attr(['aria-checked', 'radio', '50%'])) === 'true', 'Ctrl+Z restores wave');
 
+  // Octave keys.
+  await c.press(['KeyX']);
+  check((await c.text(['.keys'])).includes('C5'), 'X raises the keyboard octave');
+  await c.press(['KeyZ']);
+  check((await c.text(['.keys'])).includes('C4'), 'Z lowers it again');
+
+  // Master fader while a note is held.
+  await c.keydown(['KeyA']);
+  const before = await c.meter();
+  await c.drag(['slider', 'Master', '200', '0']);
+  check((await value('Master')) === '100%', `master fader drag 80% -> ${await value('Master')}`);
+  check((await c.meter()) > before, 'meter rises with master volume');
+  await c.keyup(['KeyA']);
+  check((await undoTitle()).startsWith('Undo Change master volume'), 'fader drag is one undo step');
+  await c.press(['Control+z']);
+  check((await value('Master')) === '80%', 'Ctrl+Z restores 80%');
+
+  // Tracks.
   await c.click(['button', 'Mute', 'Track', '2']);
   check(
     (await c.attr(['aria-pressed', 'button', 'Mute', 'Track', '2'])) === 'true',
@@ -196,14 +246,25 @@ async function smoke(c) {
     (await c.attr(['aria-pressed', 'button', 'Select', 'Track', '3'])) === 'true',
     'key 3 selects track 3',
   );
-  await c.screenshot(['2-playing']);
+  check((await c.text(['.preset-editor .track-name'])) === 'Track 3', 'editor follows the track');
+  await c.keydown(['KeyA']);
+  check((await c.meter()) > 0.02, 'notes play on the newly selected track');
+  await c.keyup(['KeyA']);
 
+  // MIDI (permission granted by the driver; there are no devices in a headless browser).
+  await c.select(['MIDI', 'input', '|', 'Enable', 'MIDI…']);
+  await c.sleep(['1000']);
+  const midi = await c.eval(["document.querySelector('.midi-select').selectedOptions[0].text"]);
+  check(/^MIDI: (no devices|all inputs)$/.test(JSON.parse(midi)), `MIDI can be enabled (${midi})`);
+
+  await c.screenshot(['3-editor']);
   await c.theme(['light']);
-  await c.screenshot(['3-light']);
+  await c.screenshot(['4-light']);
 
   const errors = await c.errors();
   check(errors === 'none', `no console errors (${errors})`);
-  console.log(`\nScreenshots in ${OUT}`);
+  console.log(`
+Screenshots in ${OUT}`);
   return failures.length === 0;
 }
 
@@ -217,12 +278,12 @@ const server = await startServer();
 const browser = await launchBrowser();
 let ok = true;
 try {
-  const page = await (
-    await browser.newContext({
-      viewport: { width: 1440, height: 900 },
-      deviceScaleFactor: Number(option('--scale', '1')),
-    })
-  ).newPage();
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: Number(option('--scale', '1')),
+  });
+  await context.grantPermissions(['midi', 'midi-sysex']);
+  const page = await context.newPage();
   const errors = [];
   page.on(
     'console',
