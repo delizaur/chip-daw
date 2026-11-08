@@ -158,7 +158,15 @@ class Session {
       }
     });
     this.#engine.subscribe((message) => {
-      if (message.type === 'meters') {
+      if (message.type === 'error') {
+        console.error('Audio engine error:', message.message);
+        this.audioStatus = 'error';
+        this.audioError = message.message.split('\n')[0] ?? message.message;
+        this.showNotice(
+          `The audio engine hit an error: ${this.audioError}. Reloading the page usually fixes it.`,
+          'error',
+        );
+      } else if (message.type === 'meters') {
         this.masterPeak = message.master;
       } else if (message.type === 'transport') {
         this.playing = message.playing;
@@ -639,3 +647,11 @@ class Session {
 }
 
 export const session = new Session();
+
+// In development, a code change to the session or anything it imports (model, engine, audio
+// bridge) reloads the page instead of hot-swapping modules: hot-swapping would leave the old
+// audio engine running next to a fresh session (stale playhead, double audio). The autosave is
+// flushed on `pagehide`, so the project survives the reload.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => location.reload());
+}

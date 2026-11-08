@@ -38,9 +38,9 @@ export class EngineBridge {
         numberOfOutputs: 1,
         outputChannelCount: [2],
       });
-      node.port.onmessage = (event: MessageEvent<EngineToUi>) => {
-        for (const listener of this.#listeners) listener(event.data);
-      };
+      node.port.onmessage = (event: MessageEvent<EngineToUi>) => this.#notify(event.data);
+      node.onprocessorerror = () =>
+        this.#notify({ type: 'error', message: 'The audio engine stopped unexpectedly.' });
       node.connect(context.destination);
       this.#context = context;
       this.#node = node;
@@ -68,6 +68,10 @@ export class EngineBridge {
     } else if (this.#starting && QUEUED_MESSAGE_TYPES.has(message.type)) {
       this.#pending.push(message);
     }
+  }
+
+  #notify(message: EngineToUi): void {
+    for (const listener of this.#listeners) listener(message);
   }
 
   subscribe(listener: Listener): () => void {

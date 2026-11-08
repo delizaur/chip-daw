@@ -43,7 +43,9 @@ export type EngineToUi =
    * The pass ended (playback stopped, seek, or record disarmed). Sent even when no notes were
    * played, so the UI can clear its preview.
    */
-  | { type: 'recorded'; take: RecordedTake };
+  | { type: 'recorded'; take: RecordedTake }
+  /** The engine hit an exception (it keeps running, silent for the failing blocks). */
+  | { type: 'error'; message: string };
 
 /** Messages that are meaningful before the engine exists, so the bridge queues them. */
 export const QUEUED_MESSAGE_TYPES: ReadonlySet<UiToEngine['type']> = new Set([
