@@ -59,7 +59,8 @@ UI → engine:
 - `applyPatches(patches)`: Immer patches after every command, including undo/redo
 - `transport(play | stop | seek(tick) | setRecord(on, overdub))`
 - `liveNote(trackIndex, on/off, pitch, velocity)`
-- `liveParam(trackIndex, boxId, paramId, value)`: knob moves during a gesture, before they are committed
+
+Knob moves during a gesture need no special message: each step is applied to the project immediately and reaches the engine as a normal patch. The transaction only affects how the steps are grouped for undo.
 
 Engine → UI:
 - `playhead(tick)`: throttled to ~60 Hz
@@ -204,7 +205,7 @@ interface ParamDescriptor {
   - The undo stack stores `{ label, patches, inversePatches }`.
   - Undo and redo apply the stored patches.
   - The same patches are sent to the engine, so **one mechanism handles both undo and engine sync**.
-- **Continuous gestures** (dragging a knob, moving a clip) are grouped: `beginTransaction()` / `endTransaction()` merges them into one undo step. During the drag, `liveParam` messages give instant sound.
+- **Continuous gestures** (dragging a knob, moving a clip) are grouped: `begin(label)` / `commit()` merges them into one undo step (`cancel()` reverts it). Each step still applies and reaches the engine immediately, so you hear the change during the drag. Repeated changes to the same value inside a transaction are collapsed, so a long drag stores one patch, not hundreds.
 - Some state is not undoable: transport state, selection, open panels, zoom.
 
 ## Persistence

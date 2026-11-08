@@ -2,14 +2,14 @@
 
 Each phase ends with something usable. Data structures for later features (walls, tempo map, automation) already exist in the model from Phase 0, even when their UI arrives later. See [ARCHITECTURE.md](ARCHITECTURE.md) for the technical design.
 
-## Phase 0: Foundations
-- [ ] Vite + Svelte 5 + TypeScript (strict) + Vitest + lint/format
-- [ ] GitHub Pages deploy via GitHub Actions (Vite `base` set to the repo path)
-- [ ] Project data model types, defaults, `formatVersion` + migration scaffold
-- [ ] Command system on Immer patches, with undo/redo stack and transactions
-- [ ] Engine skeleton (pure TS) + AudioWorklet wrapper + main-thread bridge; outputs a test tone
-- [ ] Design tokens and base control kit: knob, slider, toggle, segmented selector
-- [ ] App shell with the 5 layout regions (empty)
+## Phase 0: Foundations ✅
+- [x] Vite + Svelte 5 + TypeScript (strict) + Vitest + lint/format
+- [x] GitHub Pages deploy via GitHub Actions (Vite `base` set to the repo path); needs Pages source set to "GitHub Actions" once
+- [x] Project data model types, defaults, `formatVersion` + migration scaffold
+- [x] Command system on Immer patches, with undo/redo stack and transactions
+- [x] Engine skeleton (pure TS) + AudioWorklet wrapper + main-thread bridge; outputs a test tone
+- [x] Design tokens and base control kit: knob, slider, toggle, segmented selector
+- [x] App shell with the 5 layout regions
 
 ## Phase 1: Make a sound
 - [ ] Box registry + descriptors

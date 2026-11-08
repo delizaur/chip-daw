@@ -1,0 +1,92 @@
+/*
+ * Design tokens. OP-1 inspired: light "aluminium" chrome, a dark "screen" for the
+ * arrangement, and a small set of bright, flat accent colors.
+ */
+:root {
+  color-scheme: light;
+
+  /* Chrome */
+  --bg: #e4e3de;
+  --panel: #f2f1ed;
+  --panel-raised: #fbfaf8;
+  --panel-sunken: #d9d7d1;
+  --ink: #1b1b1d;
+  --ink-dim: #73716b;
+  --ink-on-color: #ffffff;
+  --line: rgb(0 0 0 / 0.1);
+
+  /* Screen (center area: dark in both themes, like the OP-1 display) */
+  --screen: #121214;
+  --screen-raised: #1c1c1f;
+  --screen-line: rgb(255 255 255 / 0.07);
+  --screen-line-strong: rgb(255 255 255 / 0.14);
+  --screen-ink: #f0f0ee;
+  --screen-ink-dim: #85858b;
+
+  /* Accents */
+  --c-blue: #3a7bf5;
+  --c-green: #2db86c;
+  --c-orange: #ff7130;
+  --c-red: #ef4646;
+  --c-yellow: #f5b82e;
+  --c-purple: #9468ff;
+  --c-pink: #ff5aa5;
+  --c-cyan: #1fbfcf;
+  --c-grey: #a9a7a1;
+
+  --accent: var(--c-orange);
+  --focus: var(--c-blue);
+
+  /* Type */
+  --font-ui: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+  --text-xs: 10px;
+  --text-s: 12px;
+  --text-m: 14px;
+  --text-l: 18px;
+
+  /* Shape and space */
+  --r-s: 6px;
+  --r-m: 10px;
+  --r-l: 16px;
+  --r-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  /** Minimum touch target. */
+  --hit: 40px;
+
+  --shadow-raised: 0 1px 0 rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #222225;
+    --panel: #2b2b2f;
+    --panel-raised: #343439;
+    --panel-sunken: #1d1d20;
+    --ink: #efefec;
+    --ink-dim: #9a9a9f;
+    --line: rgb(255 255 255 / 0.08);
+    --screen: #0d0d0f;
+    --screen-raised: #18181b;
+    --shadow-raised: 0 1px 0 rgb(0 0 0 / 0.4);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #222225;
+  --panel: #2b2b2f;
+  --panel-raised: #343439;
+  --panel-sunken: #1d1d20;
+  --ink: #efefec;
+  --ink-dim: #9a9a9f;
+  --line: rgb(255 255 255 / 0.08);
+  --screen: #0d0d0f;
+  --screen-raised: #18181b;
+  --shadow-raised: 0 1px 0 rgb(0 0 0 / 0.4);
+}
