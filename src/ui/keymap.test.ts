@@ -24,6 +24,10 @@ describe('comboFromEvent', () => {
     expect(comboFromEvent(key('Z', 'KeyZ', { ctrl: true, shift: true }))).toBe('mod+shift+z');
   });
 
+  it('names the space bar', () => {
+    expect(comboFromEvent(key(' ', 'Space'))).toBe('space');
+  });
+
   it('uses the physical key for digits', () => {
     expect(comboFromEvent(key('1', 'Digit1'))).toBe('digit1');
     // AZERTY: the unshifted "1" key produces "&"

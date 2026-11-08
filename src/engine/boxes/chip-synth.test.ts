@@ -12,7 +12,7 @@ function synth(params: Record<string, number> = {}) {
 }
 
 const render = (s: ChipSynth, seconds: number) =>
-  renderBlocks((l, r, n) => s.process(l, r, n), seconds);
+  renderBlocks((l, r, n) => s.process(l, r, 0, n), seconds);
 
 describe('ChipSynth', () => {
   it('is silent without notes', () => {

@@ -127,7 +127,8 @@ describe('Engine', () => {
     expect(messages.length).toBeLessThanOrEqual(1);
     noteOn(0);
     render(0.5);
-    expect(messages.length).toBeGreaterThan(10);
-    expect(Math.max(...messages.map((m) => m.master))).toBeGreaterThan(0.05);
+    const meters = messages.flatMap((m) => (m.type === 'meters' ? [m.master] : []));
+    expect(meters.length).toBeGreaterThan(10);
+    expect(Math.max(...meters)).toBeGreaterThan(0.05);
   });
 });

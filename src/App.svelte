@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Arrangement from './ui/layout/Arrangement.svelte';
+  import Arrangement from './ui/arrangement/Arrangement.svelte';
   import LeftSidebar from './ui/layout/LeftSidebar.svelte';
   import RightSidebar from './ui/layout/RightSidebar.svelte';
   import TopBar from './ui/layout/TopBar.svelte';
@@ -14,7 +14,17 @@
       'mod+z': () => session.undo(),
       'mod+shift+z': () => session.redo(),
       'mod+y': () => session.redo(),
-      escape: () => session.allNotesOff(),
+      escape: () => {
+        session.allNotesOff();
+        session.selectClips([]);
+      },
+      space: () => session.togglePlay(),
+      home: () => session.seek(0),
+      delete: () => session.deleteSelectedClips(),
+      backspace: () => session.deleteSelectedClips(),
+      'mod+c': () => session.copySelectedClips(),
+      'mod+v': () => session.paste(),
+      'mod+d': () => session.duplicateSelectedClips(),
     };
     for (let i = 0; i < 9; i++) bindings[`digit${i + 1}`] = () => session.selectTrack(i);
     return installKeymap(bindings);

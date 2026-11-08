@@ -66,13 +66,14 @@ class ChipVoice implements Voice {
     this.#envelope.release();
   }
 
-  render(out: Float32Array, frames: number): void {
+  render(out: Float32Array, offset: number, frames: number): void {
     const settings = this.#settings;
     const shape = settings.envelope;
     const frequency = noteFrequency(this.pitch + settings.tuning);
     const dt = Math.min(0.5, frequency / this.#sampleRate);
     const wave = settings.wave;
     const envelope = this.#envelope;
+    const end = offset + frames;
     let phase = this.#phase;
 
     if (wave === ChipWave.Noise || wave === ChipWave.MetalNoise) {
@@ -81,7 +82,7 @@ class ChipVoice implements Voice {
       const clock =
         (frequency * (metal ? METAL_CLOCK_RATIO : NOISE_CLOCK_RATIO)) / this.#sampleRate;
       let lfsr = this.#lfsr;
-      for (let i = 0; i < frames; i++) {
+      for (let i = offset; i < end; i++) {
         phase += clock;
         let steps = 0;
         while (phase >= 1 && steps < MAX_LFSR_STEPS) {
@@ -96,7 +97,7 @@ class ChipVoice implements Voice {
       }
       this.#lfsr = lfsr;
     } else if (wave === ChipWave.Triangle) {
-      for (let i = 0; i < frames; i++) {
+      for (let i = offset; i < end; i++) {
         out[i]! += steppedTriangle(phase) * envelope.next(shape) * this.#velocity;
         phase += dt;
         if (phase >= 1) phase -= 1;
@@ -104,7 +105,7 @@ class ChipVoice implements Voice {
       }
     } else {
       const duty = DUTY[wave] ?? 0.5;
-      for (let i = 0; i < frames; i++) {
+      for (let i = offset; i < end; i++) {
         out[i]! += pulse(phase, dt, duty) * envelope.next(shape) * this.#velocity;
         phase += dt;
         if (phase >= 1) phase -= 1;
@@ -180,12 +181,13 @@ export class ChipSynth implements SynthRuntime {
     return this.#pool.activeCount;
   }
 
-  process(left: Float32Array, right: Float32Array, frames: number): void {
-    if (this.#scratch.length < frames) this.#scratch = new Float32Array(frames);
+  process(left: Float32Array, right: Float32Array, offset: number, frames: number): void {
+    const end = offset + frames;
+    if (this.#scratch.length < end) this.#scratch = new Float32Array(end);
     const scratch = this.#scratch;
-    scratch.fill(0, 0, frames);
-    this.#pool.render(scratch, frames);
-    for (let i = 0; i < frames; i++) {
+    scratch.fill(0, offset, end);
+    this.#pool.render(scratch, offset, frames);
+    for (let i = offset; i < end; i++) {
       const sample = scratch[i]! * this.#level.next();
       left[i]! += sample;
       right[i]! += sample;

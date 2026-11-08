@@ -1,9 +1,17 @@
 import { EngineBridge } from '../../audio/bridge';
 import { MidiInputs, midiSupported, type MidiDevice, type MidiSelection } from '../../audio/midi';
-import type { ProjectCommand } from '../../model/commands';
+import { cloneClip, createClip } from '../../model/clips';
+import {
+  deleteClips,
+  placeClips,
+  recordTake,
+  type ClipPlacement,
+  type ProjectCommand,
+} from '../../model/commands';
 import { createProject } from '../../model/defaults';
 import { History } from '../../model/history';
-import type { Project, Track } from '../../model/types';
+import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
+import type { Clip, Project, Tick, Track } from '../../model/types';
 import { MAX_OCTAVE, MIN_OCTAVE, shiftVelocity } from '../input/computer-keyboard';
 
 export type AudioStatus = 'off' | 'starting' | 'running' | 'error';
@@ -52,6 +60,21 @@ class Session {
   midiDevices = $state.raw<MidiDevice[]>([]);
   midiSelection = $state<MidiSelection>('all');
 
+  // Transport (mirrors the engine; the engine owns the position while playing).
+  playing = $state(false);
+  recordArmed = $state(false);
+  overdub = $state(false);
+  metronome = $state(false);
+  /** Last position reported by (or sent to) the engine. See `playheadAt` for a smooth value. */
+  position = $state<Tick>(0);
+  #positionTime = 0;
+  /** Where the current recording pass started, for drawing it; null when not recording. */
+  recordStart = $state<Tick | null>(null);
+
+  // Clip selection and clipboard (not undoable).
+  selectedClipIds = $state.raw<ReadonlySet<string>>(new Set());
+  #clipboard: { trackOffset: number; clip: Clip }[] = [];
+
   constructor() {
     this.#history.subscribe(({ state, patches }) => {
       this.project = state;
@@ -63,7 +86,14 @@ class Session {
       if (patches.length > 0) this.#engine.send({ type: 'applyPatches', patches });
     });
     this.#engine.subscribe((message) => {
-      if (message.type === 'meters') this.masterPeak = message.master;
+      if (message.type === 'meters') {
+        this.masterPeak = message.master;
+      } else if (message.type === 'transport') {
+        this.playing = message.playing;
+        this.#setPosition(message.tick);
+      } else if (message.type === 'recorded') {
+        this.run(recordTake(message.take, this.overdub));
+      }
     });
   }
 
@@ -142,6 +172,130 @@ class Session {
     this.keyboardVelocity = shiftVelocity(this.keyboardVelocity, delta);
   }
 
+  // --- Transport --------------------------------------------------------------------------
+
+  /** Smooth playhead for drawing: the last reported position, advanced by elapsed time. */
+  playheadAt(now: number = performance.now()): Tick {
+    if (!this.playing) return this.position;
+    const bpm = bpmAt(this.project.tempoMap, this.position);
+    return this.position + ((now - this.#positionTime) / 1000) * ticksPerSecond(bpm);
+  }
+
+  #setPosition(tick: Tick): void {
+    this.position = tick;
+    this.#positionTime = performance.now();
+  }
+
+  togglePlay(): void {
+    if (this.playing) this.pause();
+    else this.play();
+  }
+
+  play(): void {
+    void this.startAudio();
+    this.playing = true;
+    this.#positionTime = performance.now();
+    if (this.recordArmed) this.recordStart = this.position;
+    this.#engine.send({ type: 'play' });
+  }
+
+  pause(): void {
+    this.playing = false;
+    this.recordStart = null;
+    this.#engine.send({ type: 'pause' });
+  }
+
+  seek(tick: Tick): void {
+    const target = Math.max(0, tick);
+    this.#setPosition(target);
+    if (this.recordStart !== null) this.recordStart = target;
+    this.#engine.send({ type: 'seek', tick: target });
+  }
+
+  toggleRecord(): void {
+    this.recordArmed = !this.recordArmed;
+    this.recordStart = this.recordArmed && this.playing ? this.playheadAt() : null;
+    this.#engine.send({ type: 'setRecord', armed: this.recordArmed });
+  }
+
+  toggleOverdub(): void {
+    this.overdub = !this.overdub;
+  }
+
+  toggleMetronome(): void {
+    this.metronome = !this.metronome;
+    this.#engine.send({ type: 'setMetronome', enabled: this.metronome });
+  }
+
+  // --- Clips ------------------------------------------------------------------------------
+
+  selectClips(ids: Iterable<string>): void {
+    this.selectedClipIds = new Set(ids);
+  }
+
+  /** Clips in selection order of tracks, with their track index. */
+  #selectedClips(): { trackIndex: number; clip: Clip }[] {
+    const ids = this.selectedClipIds;
+    return this.project.tracks.flatMap((track, trackIndex) =>
+      track.clips.filter((c) => ids.has(c.id)).map((clip) => ({ trackIndex, clip })),
+    );
+  }
+
+  deleteSelectedClips(): void {
+    if (this.selectedClipIds.size === 0) return;
+    this.run(deleteClips(this.selectedClipIds));
+    this.selectedClipIds = new Set();
+  }
+
+  copySelectedClips(): void {
+    const selected = this.#selectedClips();
+    if (selected.length === 0) return;
+    const firstTrack = Math.min(...selected.map((s) => s.trackIndex));
+    const firstTick = Math.min(...selected.map((s) => s.clip.startTick));
+    this.#clipboard = selected.map(({ trackIndex, clip }) => ({
+      trackOffset: trackIndex - firstTrack,
+      clip: { ...clip, startTick: clip.startTick - firstTick },
+    }));
+  }
+
+  /** Pastes at the playhead, starting on the selected track. */
+  paste(): void {
+    if (this.#clipboard.length === 0) return;
+    const at = this.position;
+    const placements = this.#clipboard.flatMap(({ trackOffset, clip }) => {
+      const track = this.project.tracks[this.selectedTrackIndex + trackOffset];
+      return track ? [{ trackId: track.id, clip: cloneClip(clip, at + clip.startTick) }] : [];
+    });
+    this.#placeAndSelect(placements, 'Paste');
+  }
+
+  /** Copies the selection right after itself. */
+  duplicateSelectedClips(): void {
+    const selected = this.#selectedClips();
+    if (selected.length === 0) return;
+    const start = Math.min(...selected.map((s) => s.clip.startTick));
+    const end = Math.max(...selected.map((s) => s.clip.startTick + s.clip.lengthTicks));
+    const placements = selected.map(({ trackIndex, clip }) => ({
+      trackId: this.project.tracks[trackIndex]!.id,
+      clip: cloneClip(clip, clip.startTick + (end - start)),
+    }));
+    this.#placeAndSelect(placements, 'Duplicate');
+  }
+
+  /** Creates an empty one-bar clip (for drawing notes in the piano roll). */
+  createEmptyClip(trackIndex: number, startTick: Tick): void {
+    const track = this.project.tracks[trackIndex];
+    if (!track) return;
+    const bar = ticksPerBar(this.project.tempoMap.meters[0]!);
+    this.#placeAndSelect([{ trackId: track.id, clip: createClip(startTick, bar) }], 'Add clip');
+  }
+
+  #placeAndSelect(placements: ClipPlacement[], label: string): void {
+    if (placements.length === 0) return;
+    this.run(placeClips(placements, label));
+    this.selectedClipIds = new Set(placements.map((p) => p.clip.id));
+  }
+
   // --- MIDI -------------------------------------------------------------------------------
 
   /** Requests MIDI access (may show a browser permission prompt). Call from a user action. */
@@ -173,7 +327,12 @@ class Session {
     if (this.audioStatus === 'running' || this.audioStatus === 'starting') return;
     this.audioStatus = 'starting';
     try {
-      await this.#engine.start(() => this.#history.state);
+      await this.#engine.start(() => [
+        { type: 'loadProject', project: this.#history.state },
+        { type: 'setMetronome', enabled: this.metronome },
+        { type: 'setRecord', armed: this.recordArmed },
+        { type: 'seek', tick: this.position },
+      ]);
       this.audioStatus = 'running';
       this.audioError = null;
     } catch (error) {

@@ -1,0 +1,473 @@
+<!--
+  Center area: track headers (DOM) and the timeline (canvas) with ruler, clips and playhead.
+
+  Timeline mouse/touch:
+    ruler           click or drag to move the playhead
+    clip            click to select (Shift: add/remove), drag to move (also to other tracks),
+                    drag an edge to resize; Alt while dragging disables snapping
+    empty lane      click to select the track (and place the playhead when stopped),
+                    double-click to create an empty one-bar clip
+    wheel           Shift+wheel or horizontal wheel scrolls, Ctrl/Cmd+wheel zooms
+-->
+<script lang="ts">
+  import { moveClips, resizeClip } from '../../model/commands';
+  import { PPQ } from '../../model/constants';
+  import { floorTo, snapTick, ticksPerBar } from '../../model/time';
+  import type { Clip, Tick } from '../../model/types';
+  import { session } from '../state/session.svelte';
+  import { trackColor } from '../theme';
+  import { drawTimeline, type ClipGhost } from './draw';
+  import {
+    DEFAULT_PIXELS_PER_TICK,
+    gridTicks,
+    hitTest,
+    LANE_HEIGHT,
+    laneAt,
+    RULER_HEIGHT,
+    tickToX,
+    xToTick,
+    zoomAround,
+    type TimelineView,
+  } from './geometry';
+
+  /** Shortest clip a resize can produce (a sixteenth). */
+  const MIN_CLIP_TICKS = PPQ / 4;
+
+  let canvas: HTMLCanvasElement | undefined = $state();
+  let width = $state(0);
+  let view = $state<TimelineView>({ pixelsPerTick: DEFAULT_PIXELS_PER_TICK, scrollTick: 0 });
+  let ghosts = $state.raw<ClipGhost[] | null>(null);
+  /** Bumped when something outside Svelte's knowledge (the theme) changes the drawing. */
+  let themeVersion = $state(0);
+
+  const tracks = $derived(session.project.tracks);
+  const meter = $derived(session.project.tempoMap.meters[0]!);
+  const height = $derived(RULER_HEIGHT + tracks.length * LANE_HEIGHT);
+
+  type Drag =
+    | { kind: 'seek' }
+    | {
+        kind: 'move';
+        ids: ReadonlySet<string>;
+        anchorTick: Tick;
+        anchorLane: number;
+        startX: number;
+        startY: number;
+        started: boolean;
+        deltaTicks: Tick;
+        deltaTracks: number;
+      }
+    | {
+        kind: 'resize';
+        trackIndex: number;
+        clip: Clip;
+        edge: 'start' | 'end';
+        start: Tick;
+        end: Tick;
+      };
+  let drag: Drag | null = null;
+
+  function point(event: MouseEvent) {
+    const rect = canvas!.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  function snap(tick: Tick, event: MouseEvent): Tick {
+    return event.altKey ? Math.round(tick) : snapTick(tick, gridTicks(view, meter));
+  }
+
+  // --- Drawing ------------------------------------------------------------------------------
+
+  function draw() {
+    if (!canvas || width === 0) return;
+    const ratio = window.devicePixelRatio || 1;
+    const pixelWidth = Math.round(width * ratio);
+    const pixelHeight = Math.round(height * ratio);
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawTimeline(ctx, canvas, {
+      tracks,
+      meter,
+      view,
+      width,
+      height,
+      selectedTrack: session.selectedTrackIndex,
+      selectedClips: session.selectedClipIds,
+      playhead: session.playheadAt(),
+      recordStart: session.recordStart,
+      ghosts,
+    });
+  }
+
+  /** While playing, page the view so the playhead stays visible. */
+  function followPlayhead() {
+    const x = tickToX(view, session.playheadAt());
+    if (x > width - 24 || x < 0) {
+      view = {
+        ...view,
+        scrollTick: Math.max(0, session.playheadAt() - (width * 0.1) / view.pixelsPerTick),
+      };
+    }
+  }
+
+  // Redraw whenever anything drawn changes.
+  $effect(() => {
+    void [
+      tracks,
+      meter,
+      view,
+      width,
+      height,
+      ghosts,
+      themeVersion,
+      session.selectedTrackIndex,
+      session.selectedClipIds,
+      session.position,
+      session.recordStart,
+    ];
+    draw();
+  });
+
+  // Animate the playhead while playing.
+  $effect(() => {
+    if (!session.playing) return;
+    let frame = requestAnimationFrame(function loop() {
+      followPlayhead();
+      draw();
+      frame = requestAnimationFrame(loop);
+    });
+    return () => cancelAnimationFrame(frame);
+  });
+
+  // The canvas resolves CSS colors itself, so redraw when the theme attribute changes.
+  $effect(() => {
+    const observer = new MutationObserver(() => themeVersion++);
+    observer.observe(document.documentElement, { attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  });
+
+  // Wheel: needs a non-passive listener to stop the page from scrolling/zooming.
+  $effect(() => {
+    const element = canvas;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      const { x } = point(event);
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        view = zoomAround(view, Math.exp(-event.deltaY * 0.002), x);
+        return;
+      }
+      const dx = event.shiftKey ? event.deltaY : event.deltaX;
+      if (dx !== 0) {
+        event.preventDefault();
+        view = { ...view, scrollTick: Math.max(0, view.scrollTick + dx / view.pixelsPerTick) };
+      }
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  });
+
+  function zoom(factor: number) {
+    view = zoomAround(view, factor, width / 2);
+  }
+
+  // --- Pointer --------------------------------------------------------------------------------
+
+  function onpointerdown(event: PointerEvent) {
+    if (event.button !== 0 || !canvas) return;
+    const { x, y } = point(event);
+    const hit = hitTest(tracks, view, x, y);
+    canvas.setPointerCapture(event.pointerId);
+
+    if (hit.kind === 'ruler') {
+      session.seek(snap(hit.tick, event));
+      drag = { kind: 'seek' };
+    } else if (hit.kind === 'clip') {
+      session.selectTrack(hit.trackIndex);
+      const id = hit.clip.id;
+      if (event.shiftKey) {
+        const ids = [...session.selectedClipIds];
+        const wasSelected = ids.includes(id);
+        session.selectClips(wasSelected ? ids.filter((other) => other !== id) : [...ids, id]);
+        if (wasSelected) return;
+      } else if (!session.selectedClipIds.has(id)) {
+        session.selectClips([id]);
+      }
+      const start = hit.clip.startTick;
+      drag = hit.edge
+        ? {
+            kind: 'resize',
+            trackIndex: hit.trackIndex,
+            clip: hit.clip,
+            edge: hit.edge,
+            start,
+            end: start + hit.clip.lengthTicks,
+          }
+        : {
+            kind: 'move',
+            ids: session.selectedClipIds,
+            anchorTick: start,
+            anchorLane: hit.trackIndex,
+            startX: x,
+            startY: y,
+            started: false,
+            deltaTicks: 0,
+            deltaTracks: 0,
+          };
+    } else if (hit.kind === 'lane') {
+      session.selectTrack(hit.trackIndex);
+      if (!event.shiftKey) session.selectClips([]);
+      if (!session.playing) session.seek(snap(hit.tick, event));
+    }
+  }
+
+  function onpointermove(event: PointerEvent) {
+    if (!canvas) return;
+    const { x, y } = point(event);
+    if (!drag) {
+      const hit = hitTest(tracks, view, x, y);
+      canvas.style.cursor =
+        hit.kind === 'clip'
+          ? hit.edge
+            ? 'ew-resize'
+            : 'grab'
+          : hit.kind === 'ruler'
+            ? 'pointer'
+            : '';
+      return;
+    }
+
+    if (drag.kind === 'seek') {
+      session.seek(snap(xToTick(view, x), event));
+    } else if (drag.kind === 'move') {
+      if (!drag.started && Math.hypot(x - drag.startX, y - drag.startY) < 4) return;
+      drag.started = true;
+      canvas.style.cursor = 'grabbing';
+      const raw = xToTick(view, x) - xToTick(view, drag.startX);
+      const wantTicks = snap(drag.anchorTick + raw, event) - drag.anchorTick;
+      const wantTracks = Math.min(tracks.length - 1, Math.max(0, laneAt(y))) - drag.anchorLane;
+      const ids = drag.ids;
+      const moving = tracks.flatMap((track, trackIndex) =>
+        track.clips.filter((c) => ids.has(c.id)).map((clip) => ({ trackIndex, clip })),
+      );
+      if (moving.length === 0) return;
+      // Same clamping as the moveClips command, so the preview matches the result.
+      const minStart = Math.min(...moving.map((m) => m.clip.startTick));
+      const minTrack = Math.min(...moving.map((m) => m.trackIndex));
+      const maxTrack = Math.max(...moving.map((m) => m.trackIndex));
+      drag.deltaTicks = Math.max(wantTicks, -minStart);
+      drag.deltaTracks = Math.min(tracks.length - 1 - maxTrack, Math.max(wantTracks, -minTrack));
+      const { deltaTicks, deltaTracks } = drag;
+      ghosts = moving.map(({ trackIndex, clip }) => ({
+        trackIndex: trackIndex + deltaTracks,
+        startTick: clip.startTick + deltaTicks,
+        lengthTicks: clip.lengthTicks,
+        notesStart: clip.startTick + deltaTicks,
+        clip,
+      }));
+    } else {
+      const tick = snap(xToTick(view, x), event);
+      const original = {
+        start: drag.clip.startTick,
+        end: drag.clip.startTick + drag.clip.lengthTicks,
+      };
+      if (drag.edge === 'end') {
+        drag.end = Math.max(tick, original.start + MIN_CLIP_TICKS);
+      } else {
+        drag.start = Math.min(Math.max(0, tick), original.end - MIN_CLIP_TICKS);
+      }
+      ghosts = [
+        {
+          trackIndex: drag.trackIndex,
+          startTick: drag.start,
+          lengthTicks: drag.end - drag.start,
+          notesStart: drag.clip.startTick,
+          clip: drag.clip,
+        },
+      ];
+    }
+  }
+
+  function onpointerup() {
+    const finished = drag;
+    drag = null;
+    ghosts = null;
+    if (canvas) canvas.style.cursor = '';
+    if (finished?.kind === 'move' && finished.started) {
+      if (finished.deltaTicks !== 0 || finished.deltaTracks !== 0) {
+        session.run(moveClips(finished.ids, finished.deltaTicks, finished.deltaTracks));
+      }
+    } else if (finished?.kind === 'resize') {
+      const { clip } = finished;
+      if (finished.start !== clip.startTick || finished.end !== clip.startTick + clip.lengthTicks) {
+        const trackId = tracks[finished.trackIndex]!.id;
+        session.run(resizeClip(trackId, clip.id, finished.start, finished.end));
+      }
+    }
+  }
+
+  function ondblclick(event: MouseEvent) {
+    const { x, y } = point(event);
+    const hit = hitTest(tracks, view, x, y);
+    if (hit.kind === 'lane') {
+      session.createEmptyClip(hit.trackIndex, floorTo(hit.tick, ticksPerBar(meter)));
+    }
+  }
+</script>
+
+<section
+  class="arrangement"
+  aria-label="Arrangement"
+  style:--ruler-height="{RULER_HEIGHT}px"
+  style:--lane-height="{LANE_HEIGHT}px"
+>
+  <div class="scroller">
+    <div class="headers">
+      <div class="zoom">
+        <button
+          type="button"
+          aria-label="Zoom out"
+          title="Zoom out (Ctrl+wheel)"
+          onclick={() => zoom(0.7)}>−</button
+        >
+        <button
+          type="button"
+          aria-label="Zoom in"
+          title="Zoom in (Ctrl+wheel)"
+          onclick={() => zoom(1.4)}>+</button
+        >
+      </div>
+      {#each tracks as track, i (track.id)}
+        <button
+          type="button"
+          class="lane-header"
+          class:selected={session.selectedTrackIndex === i}
+          style:--color={trackColor(i)}
+          aria-label="Select {track.name}"
+          aria-pressed={session.selectedTrackIndex === i}
+          onclick={() => session.selectTrack(i)}
+        >
+          <span class="number">{i + 1}</span>
+          <span class="name">{track.name}</span>
+        </button>
+      {/each}
+    </div>
+    <div class="timeline" bind:clientWidth={width}>
+      <canvas
+        bind:this={canvas}
+        class="timeline-canvas"
+        style:height="{height}px"
+        aria-label="Timeline"
+        {onpointerdown}
+        {onpointermove}
+        {onpointerup}
+        onpointercancel={onpointerup}
+        {ondblclick}
+      ></canvas>
+    </div>
+  </div>
+</section>
+
+<style>
+  .arrangement {
+    --header-width: 120px;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    background: var(--screen);
+    color: var(--screen-ink);
+  }
+
+  .scroller {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .headers {
+    width: var(--header-width);
+    flex-shrink: 0;
+    position: sticky;
+    left: 0;
+  }
+
+  .zoom {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    height: var(--ruler-height);
+    padding: 0 var(--space-1);
+    border-bottom: 1px solid var(--screen-line-strong);
+  }
+
+  .zoom button {
+    position: relative;
+    width: 20px;
+    height: 18px;
+    border-radius: var(--r-s);
+    color: var(--screen-ink-dim);
+    font-size: var(--text-m);
+    line-height: 1;
+  }
+
+  .zoom button::after {
+    content: '';
+    position: absolute;
+    inset: -4px -1px;
+  }
+
+  .zoom button:hover {
+    background: var(--screen-raised);
+    color: var(--screen-ink);
+  }
+
+  .lane-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    height: var(--lane-height);
+    padding: 0 var(--space-3);
+    border-left: 4px solid var(--color);
+    border-bottom: 1px solid var(--screen-line);
+    background: var(--screen-raised);
+    text-align: left;
+  }
+
+  .lane-header.selected {
+    background: color-mix(in srgb, var(--color) 22%, var(--screen-raised));
+  }
+
+  .number {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--color);
+  }
+
+  .name {
+    font-size: var(--text-s);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .timeline {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .timeline-canvas {
+    display: block;
+    width: 100%;
+    touch-action: none;
+  }
+</style>

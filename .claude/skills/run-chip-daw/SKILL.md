@@ -24,7 +24,7 @@ npm install
 
 ## Run (agent path)
 
-End-to-end smoke check (~10 s). Prints PASS/FAIL lines, exits 1 on any failure:
+End-to-end smoke check (~15 s). Prints PASS/FAIL lines, exits 1 on any failure:
 
 ```bash
 node .claude/skills/run-chip-daw/driver.mjs smoke
@@ -33,9 +33,11 @@ node .claude/skills/run-chip-daw/driver.mjs smoke
 It checks: audio starts on the first click; holding `A` plays a note (meter > 0) and releasing it
 goes silent; the preset editor's wave selector and Attack knob change the synth as single undo
 steps that Ctrl+Z restores; `X`/`Z` shift the keyboard octave; the master fader raises the meter and
-undoes; mute toggles; key `3` selects track 3 and notes then play there; MIDI can be enabled; and no
-console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-editor`, `4-light`)
-land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
+undoes; mute toggles; key `3` selects track 3 and notes then play there; record + play + a held key
+makes a one-bar clip (one undo step); dragging the clip on the canvas moves it a bar later and a
+track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z restores; Space plays the clip back; MIDI can
+be enabled; and no console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`,
+`3-arrangement`, `4-light`) land in `tmp/run-chip-daw/` (gitignored). **Look at them.**
 
 Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
 (rebuilds `dist/`):
@@ -71,11 +73,16 @@ EOF
 | `keydown <key>` / `keyup <key>` | hold / release a key; `keydown KeyA` plays C4 until `keyup KeyA` |
 | `select <combobox name…> \| <option…>` | pick a `<select>` option, e.g. `select MIDI input \| Enable MIDI…` |
 | `text <css…>` | innerText of the first match, e.g. `text .keys` (keyboard octave/velocity) |
+| `click-at <css> <x> <y> [shift\|alt]` | click at a point relative to an element, e.g. `click-at canvas 112 10` (ruler, bar 2) |
+| `dblclick-at <css> <x> <y>` | double-click at a point (empty lane: creates a one-bar clip) |
+| `drag-at <css> <x1> <y1> <x2> <y2>` | pointer drag between element-relative points (move/resize clips) |
+| `meter-max <ms>` | highest meter level while polling for `<ms>`; use it to check playback without timing guesses |
 | `drag <role> <name…> <dx> <dy>` | pointer drag from the element's center; knobs: negative dy = up = increase |
 | `attr <attribute> <role> <name…>` | print an attribute, e.g. `attr aria-valuetext slider Master` |
 | `wait-text <text…>` | wait up to 10 s for text to appear |
 | `status` | audio status pill text (`Audio off · click to start` / `Audio on`) |
 | `meter` | master meter level, linear peak 0..1 (after 300 ms settle) |
+| `eval chipDaw.session…` | the app exposes `window.chipDaw = { session }`, e.g. `eval chipDaw.session.project.tracks[0].clips.length` |
 | `eval <js…>` | evaluate JS in the page, print JSON |
 | `theme dark\|light` | set `<html data-theme>` (dark is the default; waits for transitions) |
 | `viewport <w> <h>` | resize |
@@ -87,11 +94,18 @@ EOF
 Options: `--prod` (production build), `--url <url>` (drive an already-running server),
 `--out <dir>` (screenshot dir), `--scale 2` (high-DPI screenshots for inspecting details).
 
-Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Mute Track N`,
-`Solo Track N`, `Select Track N`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
+Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Go to start`, `Play` (its
+name becomes `Pause` while playing), `Record`, `Overdub`, `Metronome`, `Zoom in`, `Zoom out`,
+`Mute Track N`, `Solo Track N`, `Select Track N`; spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
 `Decay`, `Sustain`, `Release`, `Level`, `Transpose`, `Fine`; radios (wave) `12.5%`, `25%`, `50%`,
 `Tri`, `Noise`, `Metal`; combobox `MIDI input`. Piano keys (physical): `KeyA`…`Semicolon` play
-C4…E5, `KeyZ`/`KeyX` octave, `KeyC`/`KeyV` velocity, `Escape` releases all notes.
+C4…E5, `KeyZ`/`KeyX` octave, `KeyC`/`KeyV` velocity, `Escape` releases all notes. Shortcuts:
+`Space` play/pause, `Home` go to start, `Delete`/`Backspace` delete clips, `Control+c`/`v`/`d`
+copy/paste/duplicate clips.
+
+Timeline canvas coordinates (default zoom): ruler `y` 0–24, track `N` (0-based) lane centre
+`y = 24 + 56·N + 28`, `x = 112` px per bar (28 px per beat), so bar `B` (1-based) starts at
+`x = 112·(B−1)`. Read clip state with `eval chipDaw.session.project.tracks.flatMap(...)`.
 
 ## Run (human path)
 
@@ -145,6 +159,12 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   `document.querySelector('.midi-select').selectedOptions[0].text` with `eval` instead.
 - **Piano keys are ignored while a `<select>` or text field has focus** (so typing doesn't play
   notes). After `select …`, click something else before `keydown KeyA`.
+- **The timeline is a canvas.** Clips have no DOM elements or accessible names; use the
+  `*-at` commands with the coordinates above, then check results through `eval chipDaw.session…`.
+- **Clicking an empty lane moves the playhead when stopped.** It's how you place the paste
+  position (`click-at canvas 2 10` on the ruler also works). Paste goes to the selected track.
+- **Recording records the selected track.** Record arm + Play, then hold keys; the clip appears
+  when you press Pause (or disarm Record), rounded out to whole bars.
 - **Reading the meter.** The raw level is `data-level` on `.top-bar .meter-fill` (the engine's
   linear peak over ~33 ms); the bar itself is drawn on a dB scale. One held default-preset note
   reads about 0.04. After the last note ends, the engine reports one 0 and then goes quiet, so

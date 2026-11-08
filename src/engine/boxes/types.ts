@@ -9,8 +9,11 @@ export interface SynthRuntime {
   noteOff(pitch: number): void;
   /** Releases every held note (their release tails still play). */
   allNotesOff(): void;
-  /** Adds `frames` samples to both channels. */
-  process(left: Float32Array, right: Float32Array, frames: number): void;
+  /**
+   * Adds `frames` samples to both channels, starting at `offset`. Called once per stretch of
+   * the block between note events, so notes start on their exact sample.
+   */
+  process(left: Float32Array, right: Float32Array, offset: number, frames: number): void;
 }
 
 export type SynthFactory = (sampleRate: number) => SynthRuntime;

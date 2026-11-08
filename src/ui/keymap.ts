@@ -17,7 +17,9 @@ export function comboFromEvent(event: KeyEventLike): string {
   if (event.ctrlKey || event.metaKey) parts.push('mod');
   if (event.altKey) parts.push('alt');
   if (event.shiftKey) parts.push('shift');
-  parts.push(/^Digit\d$/.test(event.code) ? event.code.toLowerCase() : event.key.toLowerCase());
+  if (/^Digit\d$/.test(event.code)) parts.push(event.code.toLowerCase());
+  else if (event.key === ' ') parts.push('space');
+  else parts.push(event.key.toLowerCase());
   return parts.join('+');
 }
 
@@ -34,12 +36,22 @@ export function isTextInput(target: EventTarget | null): boolean {
 
 export function installKeymap(bindings: Record<string, KeyHandler>): () => void {
   const onKeyDown = (event: KeyboardEvent) => {
-    if (isTextInput(event.target)) return;
+    // A focused control (knob, slider...) that used the key has already prevented its default.
+    if (event.defaultPrevented || isTextInput(event.target)) return;
     const handler = bindings[comboFromEvent(event)];
     if (!handler) return;
     event.preventDefault();
     handler(event);
   };
+  // Buttons activate on Space's keyup; stop that when Space is a shortcut (play/pause), so a
+  // focused button isn't pressed as well.
+  const onKeyUp = (event: KeyboardEvent) => {
+    if (event.key === ' ' && bindings.space && !isTextInput(event.target)) event.preventDefault();
+  };
   window.addEventListener('keydown', onKeyDown);
-  return () => window.removeEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  return () => {
+    window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('keyup', onKeyUp);
+  };
 }

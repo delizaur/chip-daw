@@ -4,6 +4,7 @@
   import { noteName } from '../input/computer-keyboard';
   import { session } from '../state/session.svelte';
   import MidiSelect from './MidiSelect.svelte';
+  import Transport from './Transport.svelte';
 
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
   const mod = isMac ? '⌘' : 'Ctrl+';
@@ -58,6 +59,8 @@
       ↷
     </button>
   </div>
+
+  <Transport />
 
   <div class="spacer"></div>
 

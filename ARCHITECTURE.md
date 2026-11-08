@@ -57,16 +57,21 @@ This document describes how chip-daw is built. For *what* it should be, see [des
 UI → engine:
 - `loadProject(project)`: full snapshot (on open/import)
 - `applyPatches(patches)`: Immer patches after every command, including undo/redo
-- `transport(play | stop | seek(tick) | setRecord(on, overdub))`
+- `play()` / `pause()` / `seek(tick)`: the transport (pause stops in place)
+- `setRecord(armed)`: while armed and playing, live notes are captured into a take
+- `setMetronome(enabled)`
+- `setLatency(seconds)`: output latency, sent by the bridge once audio runs
 - `noteOn(trackId, pitch, velocity)` / `noteOff(trackId, pitch)`: live input (computer keyboard, MIDI)
 - `allNotesOff()`: releases everything (window blur, Escape, MIDI CC 120/123)
 
 Knob moves during a gesture need no special message: each step is applied to the project immediately and reaches the engine as a normal patch. The transaction only affects how the steps are grouped for undo.
 
 Engine → UI:
-- `playhead(tick)`: throttled to ~60 Hz
-- `meters(trackPeaks[], masterPeak)`
-- `recorded(notes[], paramPoints[])`: when recording stops
+- `transport(playing, tick)`: ~30 Hz while playing, and on every transport change. The UI extrapolates between reports for a smooth playhead.
+- `meters(masterPeak)` (per-track peaks later)
+- `recorded(take)`: when a recording pass ends (pause, seek, or record disarmed). Param-move recording comes with automation in Phase 4.
+
+Messages sent while audio is still starting are queued if they are notes or transport commands; project patches are dropped because the engine starts from a fresh snapshot.
 
 ## Project data model
 
@@ -196,7 +201,10 @@ interface ParamDescriptor {
   - plays in real time inside the `AudioWorkletProcessor`,
   - renders offline in a Web Worker for WAV export (sounds exactly like playback),
   - renders to buffers in unit tests under Node.
-- **Transport:** advances a tick position per sample by integrating the tempo map, so tempo ramps are exact. Events inside a 128-sample block are applied at their exact sample offset.
+- **Transport:** advances a tick position each block. The tempo is read once per block, so a tempo change lands at most 128 samples late (linear tempo ramps arrive with Phase 4). Note events inside a block are applied at their exact sample offset: each track renders its synth in stretches between events.
+- **Clip playback:** each track flattens its clips into note-ons sorted by tick (rebuilt when its clips change, resuming from the current position). Each playing pitch remembers its own end tick, so editing a clip mid-note can't leave a stuck note. Notes that started before the play position aren't "chased" (they don't sound until their next start).
+- **Recording:** live notes are stamped with the position minus the output latency (what the player was hearing), then sent to the UI as a take. The UI turns it into clips with one undoable command: one clip per track, rounded out to whole bars. Without overdub it replaces what was underneath; with overdub it merges with the clips it overlaps.
+- **Metronome:** a short square blip on every beat while playing, accented on the downbeat. It's mixed straight into the master, not part of any track.
 - **Signal flow per track:** active segment(s) → sequencer chain → synth voices → effect chain → track volume/mute/solo → master bus → master volume → soft clipper.
 - **Real-time rules:**
   - No allocation inside `process()`: voices, buffers and event queues are preallocated.
@@ -226,6 +234,8 @@ interface ParamDescriptor {
 
 - **Layout:** top bar, left sidebar (preset library), center (track arrangement), right sidebar (track presets, mute/solo/volume), bottom panel (preset editor or piano roll).
 - **Canvas** is used for the arrangement timeline, automation lanes and the piano roll. Everything else is Svelte components.
+- **Arrangement timeline** (`src/ui/arrangement/`): pure geometry (tick↔pixel, snap grid by zoom, hit-testing) is unit-tested; the canvas draws a ruler, lanes, clips with a note preview, a recording region and the playhead. While dragging, clips are previewed as ghosts and the edit is committed as one command on release. Interactions: click the ruler to seek; click/Shift-click clips to select; drag to move (also across tracks) or drag an edge to resize, with Alt to disable snapping; double-click an empty lane to create a one-bar clip; Shift+wheel scrolls, Ctrl/Cmd+wheel zooms.
+- **Shortcuts:** Space play/pause, Home go to start, Delete/Backspace delete clips, Ctrl/Cmd+C/V/D copy/paste/duplicate clips (paste goes to the playhead on the selected track), Escape releases notes and clears the selection.
 - **Base controls** (knob, slider, meter fader, toggle, segmented selector) form a small in-house kit that defines the OP-1-inspired look. Design tokens (colors, radii, type) are CSS custom properties. The theme is **dark by default**; a light theme exists behind `<html data-theme="light">` for a future setting.
 - **Input:**
   - Number keys select tracks 1–9 (or fewer if the project has fewer tracks). Tracks beyond 9 are selected by clicking.

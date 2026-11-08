@@ -104,6 +104,36 @@ function createCommands(page, url, errors) {
       return page.locator(selector.join(' ')).first().innerText();
     },
     /**
+     * click-at <css> <x> <y> [shift|alt]: click at a point relative to the element's top-left
+     * (for the canvas timeline).
+     */
+    async 'click-at'([selector, x, y, modifier]) {
+      const box = await page.locator(selector).first().boundingBox();
+      const key = modifier ? { shift: 'Shift', alt: 'Alt' }[modifier] : undefined;
+      if (key) await page.keyboard.down(key);
+      await page.mouse.click(box.x + Number(x), box.y + Number(y));
+      if (key) await page.keyboard.up(key);
+    },
+    async 'dblclick-at'([selector, x, y]) {
+      const box = await page.locator(selector).first().boundingBox();
+      await page.mouse.dblclick(box.x + Number(x), box.y + Number(y));
+    },
+    /** drag-at <css> <x1> <y1> <x2> <y2>: pointer drag between element-relative points. */
+    async 'drag-at'([selector, x1, y1, x2, y2]) {
+      const box = await page.locator(selector).first().boundingBox();
+      const from = { x: box.x + Number(x1), y: box.y + Number(y1) };
+      const to = { x: box.x + Number(x2), y: box.y + Number(y2) };
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 10; i++) {
+        await page.mouse.move(
+          from.x + ((to.x - from.x) * i) / 10,
+          from.y + ((to.y - from.y) * i) / 10,
+        );
+      }
+      await page.mouse.up();
+    },
+    /**
      * drag <role> <name...> <dx> <dy>: pointer drag starting at the element's center.
      * Knobs: negative dy (up) increases. Sliders: they jump to the press point first.
      */
@@ -132,6 +162,15 @@ function createCommands(page, url, errors) {
     async meter() {
       await page.waitForTimeout(300);
       return meter();
+    },
+    /** meter-max <ms>: highest meter level seen while polling for <ms> (timing-tolerant). */
+    async 'meter-max'([ms = '1000']) {
+      let max = 0;
+      for (let waited = 0; waited < Number(ms); waited += 30) {
+        max = Math.max(max, await meter());
+        await page.waitForTimeout(30);
+      }
+      return max;
     },
     async eval(words) {
       return JSON.stringify(await page.evaluate(words.join(' ')));
@@ -251,13 +290,51 @@ async function smoke(c) {
   check((await c.meter()) > 0.02, 'notes play on the newly selected track');
   await c.keyup(['KeyA']);
 
+  // Recording, clip editing and playback (track 3 is selected at this point). The timeline
+  // canvas has a 24 px ruler, 56 px lanes and 112 px per bar at the default zoom.
+  const clips = async () =>
+    JSON.parse(
+      await c.eval([
+        'chipDaw.session.project.tracks.flatMap((t, i) => t.clips.map(c => `${i}:${c.startTick}+${c.lengthTicks}/${c.notes.length}`))',
+      ]),
+    ).join(' ');
+  await c.click(['button', 'Record']);
+  await c.click(['button', 'Play']);
+  await c.sleep(['200']);
+  await c.keydown(['KeyA']);
+  await c.sleep(['300']);
+  await c.keyup(['KeyA']);
+  await c.sleep(['200']);
+  await c.click(['button', 'Pause']);
+  await c.click(['button', 'Record']);
+  let now = await clips();
+  check(now === '2:0+3840/1', `recording makes a one-bar clip with the note (${now})`);
+  check((await undoTitle()).startsWith('Undo Record'), 'the take is one undo step');
+
+  await c['drag-at'](['canvas', '60', '164', '172', '220']);
+  now = await clips();
+  check(now === '3:3840+3840/1', `dragging moves the clip a bar later and a track down (${now})`);
+  await c.press(['Control+d']);
+  now = await clips();
+  check(now === '3:3840+3840/1 3:7680+3840/1', `Ctrl+D duplicates (${now})`);
+  await c.press(['Delete']);
+  check((await clips()) === '3:3840+3840/1', 'Delete removes the selected clip');
+  await c.press(['Control+z']);
+  check((await clips()).split(' ').length === 2, 'Ctrl+Z restores it');
+
+  await c['click-at'](['canvas', '112', '10']); // ruler at bar 2
+  await c.press(['Space']);
+  const level = await c['meter-max'](['1000']);
+  await c.press(['Space']);
+  check(level > 0.02, `Space plays the recorded clip back (meter ${level.toFixed(3)})`);
+  await c.screenshot(['3-arrangement']);
+
   // MIDI (permission granted by the driver; there are no devices in a headless browser).
   await c.select(['MIDI', 'input', '|', 'Enable', 'MIDI…']);
   await c.sleep(['1000']);
   const midi = await c.eval(["document.querySelector('.midi-select').selectedOptions[0].text"]);
   check(/^MIDI: (no devices|all inputs)$/.test(JSON.parse(midi)), `MIDI can be enabled (${midi})`);
 
-  await c.screenshot(['3-editor']);
   await c.theme(['light']);
   await c.screenshot(['4-light']);
 

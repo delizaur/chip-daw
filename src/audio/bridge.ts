@@ -1,13 +1,10 @@
-import type { Project } from '../model/types';
-import type { EngineToUi, UiToEngine } from '../engine/protocol';
+import { QUEUED_MESSAGE_TYPES, type EngineToUi, type UiToEngine } from '../engine/protocol';
 import workletUrl from './engine.worklet.ts?worker&url';
 
 // Must match PROCESSOR_NAME in engine.worklet.ts (not imported, so the worklet isn't bundled twice).
 const PROCESSOR_NAME = 'chip-engine';
 
 type Listener = (message: EngineToUi) => void;
-
-const LIVE_MESSAGES = new Set<UiToEngine['type']>(['noteOn', 'noteOff', 'allNotesOff']);
 
 /** Main-thread handle to the audio engine running in the AudioWorklet. */
 export class EngineBridge {
@@ -23,15 +20,16 @@ export class EngineBridge {
 
   /**
    * Creates the AudioContext and engine (or resumes it). Browsers only allow this from a user
-   * gesture. `getProject` is read once the engine is ready, so no edits made while loading are lost.
+   * gesture. `initialMessages` (the project snapshot and transport settings) is read once the
+   * engine is ready, so no edits made while loading are lost.
    */
-  start(getProject: () => Project): Promise<void> {
+  start(initialMessages: () => UiToEngine[]): Promise<void> {
     if (this.#context) return this.#context.resume();
-    this.#starting ??= this.#create(getProject).finally(() => (this.#starting = null));
+    this.#starting ??= this.#create(initialMessages).finally(() => (this.#starting = null));
     return this.#starting;
   }
 
-  async #create(getProject: () => Project): Promise<void> {
+  async #create(initialMessages: () => UiToEngine[]): Promise<void> {
     const context = new AudioContext({ latencyHint: 'interactive' });
     try {
       await context.audioWorklet.addModule(workletUrl);
@@ -46,9 +44,12 @@ export class EngineBridge {
       node.connect(context.destination);
       this.#context = context;
       this.#node = node;
-      this.send({ type: 'loadProject', project: getProject() });
+      for (const message of initialMessages()) this.send(message);
       for (const message of this.#pending.splice(0)) this.send(message);
       await context.resume();
+      // Known once running: how late what we play reaches the speakers.
+      const latency = (context.outputLatency || 0) + context.baseLatency;
+      this.send({ type: 'setLatency', seconds: latency });
     } catch (error) {
       this.#pending = [];
       await context.close();
@@ -58,13 +59,13 @@ export class EngineBridge {
 
   /**
    * Sends a message to the engine. Before the engine exists, project patches are dropped
-   * (the engine loads a fresh snapshot when it starts), but live notes played while audio is
-   * starting are queued, so the key press that starts audio still sounds.
+   * (the engine loads a fresh snapshot when it starts), but notes and transport commands sent
+   * while audio is starting are queued, so the key press that starts audio still sounds.
    */
   send(message: UiToEngine): void {
     if (this.#node) {
       this.#node.port.postMessage(message);
-    } else if (this.#starting && LIVE_MESSAGES.has(message.type)) {
+    } else if (this.#starting && QUEUED_MESSAGE_TYPES.has(message.type)) {
       this.#pending.push(message);
     }
   }

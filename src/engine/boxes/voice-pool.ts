@@ -5,8 +5,8 @@ export interface Voice {
   readonly releasing: boolean;
   start(pitch: number, velocity: number): void;
   release(): void;
-  /** Adds `frames` mono samples to `out`. */
-  render(out: Float32Array, frames: number): void;
+  /** Adds `frames` mono samples to `out`, starting at `offset`. */
+  render(out: Float32Array, offset: number, frames: number): void;
 }
 
 /**
@@ -39,8 +39,8 @@ export class VoicePool<V extends Voice> {
     for (const voice of this.voices) voice.release();
   }
 
-  render(out: Float32Array, frames: number): void {
-    for (const voice of this.voices) if (voice.active) voice.render(out, frames);
+  render(out: Float32Array, offset: number, frames: number): void {
+    for (const voice of this.voices) if (voice.active) voice.render(out, offset, frames);
   }
 
   get activeCount(): number {
