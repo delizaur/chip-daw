@@ -49,6 +49,13 @@
       title="Export this project as a .chip file ({mod}S)"
       onclick={() => session.exportProject()}>Export</button
     >
+    <button
+      type="button"
+      class="text-button"
+      title="Render the song to a WAV file (44.1 kHz, 16-bit)"
+      disabled={session.exportingWav}
+      onclick={() => session.exportWav()}>Export WAV</button
+    >
   </div>
 
   <button

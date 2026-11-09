@@ -4,8 +4,9 @@
   segment (preset walls arrive in Phase 4).
 -->
 <script lang="ts">
-  import { addBox } from '../../model/chain-commands';
+  import { addBox, renameTrackPreset } from '../../model/chain-commands';
   import { boxDescriptorsOfKind, createBox } from '../../model/boxes/registry';
+  import { libraryStore } from '../state/library.svelte';
   import { session } from '../state/session.svelte';
   import { trackColor } from '../theme';
   import BoxPanel from './BoxPanel.svelte';
@@ -30,8 +31,28 @@
     <header>
       <span class="badge">{index + 1}</span>
       <div class="titles">
-        <h2>{segment.preset.name}</h2>
+        <input
+          class="preset-name"
+          aria-label="Preset name"
+          value={segment.preset.name}
+          onchange={(e) =>
+            address && session.run(renameTrackPreset(address, e.currentTarget.value))}
+          onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        />
         <span class="track-name">{track.name}</span>
+        <div class="preset-actions">
+          <button
+            type="button"
+            title="Save a copy of this preset in the library"
+            onclick={() => libraryStore.saveTrackPreset()}>Save to library</button
+          >
+          <button
+            type="button"
+            aria-label="Export track preset"
+            title="Export this preset as a .chippreset file"
+            onclick={() => libraryStore.exportPreset()}>Export</button
+          >
+        </div>
       </div>
     </header>
     <div class="chain">
@@ -97,12 +118,48 @@
     min-width: 0;
   }
 
-  h2 {
+  .preset-name {
+    width: 100%;
+    padding: 2px var(--space-1);
+    margin-left: calc(-1 * var(--space-1));
+    border: 1px solid transparent;
+    border-radius: var(--r-s);
+    background: none;
+    color: var(--ink);
+    font: inherit;
     font-size: var(--text-m);
     font-weight: 800;
-    overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .preset-name:hover {
+    border-color: var(--line);
+  }
+
+  .preset-name:focus {
+    border-color: var(--focus);
+    background: var(--panel-raised);
+    outline: none;
+  }
+
+  .preset-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    margin-top: var(--space-2);
+  }
+
+  .preset-actions button {
+    padding: 2px 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--ink-dim);
+  }
+
+  .preset-actions button:hover {
+    color: var(--ink);
+    text-decoration: underline;
   }
 
   .track-name {

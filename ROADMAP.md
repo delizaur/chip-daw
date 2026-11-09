@@ -27,13 +27,13 @@ Each phase ends with something usable. Data structures for later features (walls
 - [x] Undo/redo wired to every edit
 - [x] Project import/export (`.chip`) + IndexedDB autosave/restore
 
-## Phase 3: Preset pipeline
+## Phase 3: Preset pipeline ✅
 - [x] Full box chain: sequencers → synth → effects, added, removed, reordered, replaced and bypassed
 - [x] Sequencer: arpeggiator (more note helpers, e.g. chord or note-length, can follow later)
 - [x] Effects: bitcrush/sample-rate reduction, filter, delay, reverb
-- [ ] Left sidebar preset library: folders, copy, rename, delete (IndexedDB)
-- [ ] Assign library presets to tracks (deep copy); preset import/export (`.chippreset`)
-- [ ] WAV export via offline render in a Worker
+- [x] Left sidebar preset library: folders, copy, rename, delete (IndexedDB), with starter presets
+- [x] Assign library presets to tracks (deep copy); preset import/export (`.chippreset`)
+- [x] WAV export via offline render in a Worker
 
 ## Phase 4: Time and automation
 - [ ] Clip automation lanes; draw/edit points; hold-last-value + chase on seek

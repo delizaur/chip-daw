@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createBox } from './boxes/registry';
-import { addBox, moveBox, removeBox, replaceBox, setBoxBypassed } from './chain-commands';
-import { createProject } from './defaults';
+import {
+  addBox,
+  loadPreset,
+  moveBox,
+  removeBox,
+  renameTrackPreset,
+  replaceBox,
+  setBoxBypassed,
+} from './chain-commands';
+import { createPreset, createProject } from './defaults';
 import { History } from './history';
+import { copyPreset } from './library';
 
 function setup() {
   const h = new History(createProject());
@@ -71,5 +80,23 @@ describe('chain commands', () => {
     expect(preset().effects[0]!.bypassed).toBe(true);
     h.run(setBoxBypassed(address, delay.id, false));
     expect('bypassed' in preset().effects[0]!).toBe(false);
+  });
+});
+
+describe('preset commands', () => {
+  it('loads a preset onto a track and renames it, undoably', () => {
+    const { h, address, preset } = setup();
+    const before = preset();
+    const incoming = copyPreset(createPreset('Bass'));
+    h.run(loadPreset(address, incoming));
+    expect(preset()).toEqual(incoming);
+    expect(h.undoLabel).toBe('Load Bass');
+    h.run(renameTrackPreset(address, '  Deep bass '));
+    expect(preset().name).toBe('Deep bass');
+    h.run(renameTrackPreset(address, ''));
+    expect(preset().name).toBe('Deep bass');
+    h.undo();
+    h.undo();
+    expect(preset()).toEqual(before);
   });
 });

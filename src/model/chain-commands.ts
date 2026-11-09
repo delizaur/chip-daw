@@ -114,3 +114,26 @@ export function setBoxBypassed(
     },
   };
 }
+
+/** Puts a preset (a fresh copy, e.g. from `instantiatePreset`) on a track's segment. */
+export function loadPreset(address: SegmentAddress, preset: Preset): ProjectCommand {
+  return {
+    label: `Load ${preset.name}`,
+    recipe: (project) => {
+      const track = project.tracks.find((t) => t.id === address.trackId);
+      const segment = track?.segments.find((s) => s.id === address.segmentId);
+      if (!segment) throw new Error(`Segment ${address.segmentId} not found`);
+      segment.preset = preset;
+    },
+  };
+}
+
+export function renameTrackPreset(address: SegmentAddress, name: string): ProjectCommand {
+  return {
+    label: 'Rename preset',
+    recipe: (project) => {
+      const preset = findPreset(project, address);
+      preset.name = name.trim() || preset.name;
+    },
+  };
+}

@@ -31,7 +31,15 @@ import {
 import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
 import type { Clip, Note, Project, Tick, Track } from '../../model/types';
 import { Autosaver, loadAutosave } from '../../persistence/autosave';
-import { openTextFile, saveTextFile } from '../../persistence/files';
+import {
+  chooseSaveTarget,
+  openTextFile,
+  PROJECT_FILE,
+  saveFile,
+  WAV_FILE,
+} from '../../persistence/files';
+import type { RenderReply, RenderRequest } from '../../audio/render.worker';
+import { songEndTick } from '../../engine/offline-render';
 import { MAX_OCTAVE, MIN_OCTAVE, shiftVelocity } from '../input/computer-keyboard';
 
 export type AudioStatus = 'off' | 'starting' | 'running' | 'error';
@@ -550,7 +558,7 @@ class Session {
 
   async importProject(): Promise<void> {
     try {
-      const file = await openTextFile();
+      const file = await openTextFile(PROJECT_FILE);
       if (!file) return;
       const project = parseProject(file.text);
       this.#loadProject({ ...project, name: projectNameFromFile(file.name) });
@@ -562,9 +570,10 @@ class Session {
 
   async exportProject(): Promise<void> {
     try {
-      const name = await saveTextFile(
+      const name = await saveFile(
         serializeProject(this.project),
         projectFileName(this.project),
+        PROJECT_FILE,
       );
       if (!name) return;
       const newName = projectNameFromFile(name);
@@ -573,6 +582,59 @@ class Session {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.showNotice(`Couldn't save: ${reason}`, 'error');
+    }
+  }
+
+  /** True while a WAV export is rendering. */
+  exportingWav = $state(false);
+
+  /**
+   * Renders the song (from the start to the end of the last clip, plus effect tails) to a
+   * 44.1 kHz / 16-bit WAV file in a background worker. Asks where to save first, because the
+   * save dialog only opens straight after a click.
+   */
+  async exportWav(): Promise<void> {
+    if (this.exportingWav) return;
+    const project = this.project;
+    if (songEndTick(project) === 0) {
+      this.showNotice('Nothing to export yet: the song has no clips.', 'error');
+      return;
+    }
+    try {
+      const target = await chooseSaveTarget(`${project.name}.wav`, WAV_FILE);
+      if (!target) return;
+      this.exportingWav = true;
+      this.showNotice('Rendering WAV… 0%');
+      const { wav, seconds } = await new Promise<{ wav: ArrayBuffer; seconds: number }>(
+        (resolve, reject) => {
+          const worker = new Worker(new URL('../../audio/render.worker.ts', import.meta.url), {
+            type: 'module',
+          });
+          worker.onmessage = (event: MessageEvent<RenderReply>) => {
+            const message = event.data;
+            if (message.type === 'progress') {
+              this.showNotice(`Rendering WAV… ${Math.round(message.fraction * 100)}%`);
+              return;
+            }
+            worker.terminate();
+            if (message.type === 'done') resolve(message);
+            else reject(new Error(message.message));
+          };
+          worker.onerror = (event) => {
+            worker.terminate();
+            reject(new Error(event.message || 'The render worker failed'));
+          };
+          const request: RenderRequest = { project, sampleRate: 44100, bitDepth: 16 };
+          worker.postMessage(request);
+        },
+      );
+      await target.write(new Blob([wav], { type: WAV_FILE.mime }));
+      this.showNotice(`Saved ${target.name} (${seconds.toFixed(1)} s)`);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.showNotice(`Couldn't export WAV: ${reason}`, 'error');
+    } finally {
+      this.exportingWav = false;
     }
   }
 

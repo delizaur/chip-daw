@@ -1,5 +1,5 @@
 import { ProjectFormatError } from './migrations';
-import type { Project } from './types';
+import type { Preset, Project } from './types';
 
 type Json = Record<string, unknown>;
 
@@ -9,7 +9,7 @@ const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.is
 const isString = (v: unknown): v is string => typeof v === 'string';
 
 function fail(path: string, expected: string): never {
-  throw new ProjectFormatError(`Invalid project file: ${path} should be ${expected}.`);
+  throw new ProjectFormatError(`Invalid file: ${path} should be ${expected}.`);
 }
 
 function requireArray(value: unknown, path: string): unknown[] {
@@ -36,6 +36,21 @@ function checkBox(value: unknown, path: string): void {
   if (value.bypassed !== undefined && typeof value.bypassed !== 'boolean') {
     fail(`${path}.bypassed`, 'true or false');
   }
+}
+
+/** Checks the shape of a Preset (its box chain) found at `path`. */
+export function checkPreset(value: unknown, path: string): Preset {
+  if (!isObject(value)) fail(path, 'a preset');
+  requireString(value.id, `${path}.id`);
+  requireString(value.name, `${path}.name`);
+  checkBox(value.synth, `${path}.synth`);
+  requireArray(value.sequencers, `${path}.sequencers`).forEach((b, i) =>
+    checkBox(b, `${path}.sequencers[${i}]`),
+  );
+  requireArray(value.effects, `${path}.effects`).forEach((b, i) =>
+    checkBox(b, `${path}.effects[${i}]`),
+  );
+  return value as unknown as Preset;
 }
 
 /**
@@ -78,14 +93,7 @@ export function validateProject(value: unknown): Project {
       const sp = `${path}.segments[${s}]`;
       if (!isObject(segment) || !isObject(segment.preset)) fail(sp, 'a preset segment');
       requireNumber(segment.startTick, `${sp}.startTick`);
-      const preset = segment.preset;
-      checkBox(preset.synth, `${sp}.preset.synth`);
-      requireArray(preset.sequencers, `${sp}.preset.sequencers`).forEach((b, i) =>
-        checkBox(b, `${sp}.preset.sequencers[${i}]`),
-      );
-      requireArray(preset.effects, `${sp}.preset.effects`).forEach((b, i) =>
-        checkBox(b, `${sp}.preset.effects[${i}]`),
-      );
+      checkPreset(segment.preset, `${sp}.preset`);
     });
     requireArray(track.clips, `${path}.clips`).forEach((clip, c) => {
       const cp = `${path}.clips[${c}]`;

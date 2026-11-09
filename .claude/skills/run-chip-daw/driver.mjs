@@ -215,6 +215,42 @@ function createCommands(page, url, errors) {
       await (await download).saveAs(resolve(ROOT, path));
       return resolve(ROOT, path);
     },
+    /**
+     * export-wav <path>: clicks Export WAV and saves the rendered file to <path>. Waits for the
+     * render (download fallback, like export-file). Prints the WAV's format and length.
+     */
+    async 'export-wav'([path]) {
+      await page.evaluate(() => (window.showSaveFilePicker = undefined));
+      const download = page.waitForEvent('download', { timeout: 60000 });
+      await page.getByRole('button', { name: 'Export WAV', exact: true }).click();
+      const file = resolve(ROOT, path);
+      await (await download).saveAs(file);
+      const { readFileSync } = await import('node:fs');
+      const wav = readFileSync(file);
+      const rate = wav.readUInt32LE(24);
+      const bits = wav.readUInt16LE(34);
+      const channels = wav.readUInt16LE(22);
+      const seconds = wav.readUInt32LE(40) / (rate * channels * (bits / 8));
+      return `${wav.toString('ascii', 0, 4)} ${rate} Hz ${bits}-bit ${channels} ch, ${seconds.toFixed(2)} s`;
+    },
+    /** download <path> <button name...>: clicks a button and saves the file it downloads. */
+    async download([path, ...name]) {
+      await page.evaluate(() => (window.showSaveFilePicker = undefined));
+      const download = page.waitForEvent('download', { timeout: 60000 });
+      await page.getByRole('button', { name: name.join(' '), exact: true }).click();
+      await (await download).saveAs(resolve(ROOT, path));
+      return resolve(ROOT, path);
+    },
+    /** upload <path> <button name...>: clicks a button that opens a file dialog and picks <path>. */
+    async upload([path, ...name]) {
+      const chooser = page.waitForEvent('filechooser');
+      await page.getByRole('button', { name: name.join(' '), exact: true }).click();
+      await (await chooser).setFiles(resolve(ROOT, path));
+    },
+    /** type <text...>: types into the focused element (e.g. an inline rename box). */
+    async type(words) {
+      await page.keyboard.type(words.join(' '));
+    },
     /** import-file <path>: clicks Import and picks <path> in the file dialog. */
     async 'import-file'([path]) {
       const chooser = page.waitForEvent('filechooser');
@@ -493,6 +529,49 @@ async function smoke(c) {
   await c.goto([]);
   await c.sleep(['500']);
   check((await clips()).split(' ').length === 3, 'reloading restores the autosaved project');
+
+  // Preset library (a fresh browser gets the starter presets) and WAV export.
+  const trackPreset = async () =>
+    JSON.parse(await c.eval(['chipDaw.session.project.tracks[0].segments[0].preset.name']));
+  await c.press(['1']);
+  await c.click(['button', 'Open', 'Bass']);
+  await c.click(['button', 'Triangle', 'bass']);
+  await c.click(['button', 'Load', 'to', 'Track', '1']);
+  check((await trackPreset()) === 'Triangle bass', 'a library preset loads onto the track');
+  check((await undoTitle()).startsWith('Undo Load Triangle bass'), 'loading a preset is undoable');
+  await c.click(['button', 'Save', 'Track', '1', 'preset']);
+  const libraryNames = async () =>
+    JSON.parse(
+      await c.eval([
+        "[...document.querySelectorAll('.library .preset .label')].map(e => e.textContent).join(', ')",
+      ]),
+    );
+  check(
+    (await libraryNames()) === 'Pulse bass, Triangle bass, Triangle bass',
+    `the track's preset saves into the library (${await libraryNames()})`,
+  );
+  await c.click(['button', 'Rename', 'preset']);
+  await c.type(['Deep bass']);
+  await c.press(['Enter']);
+  check((await libraryNames()).includes('Deep bass'), 'library presets can be renamed');
+  await c.download(['tmp/run-chip-daw/deep-bass.chippreset', 'Export', 'preset']);
+  const presetFile = JSON.parse(
+    (await import('node:fs')).readFileSync(
+      resolve(ROOT, 'tmp/run-chip-daw/deep-bass.chippreset'),
+      'utf8',
+    ),
+  );
+  check(presetFile.preset?.name === 'Deep bass', 'a library preset exports as .chippreset');
+  await c.click(['button', 'Delete', 'preset']);
+  check(!(await libraryNames()).includes('Deep bass'), 'library presets can be deleted');
+  await c.upload(['tmp/run-chip-daw/deep-bass.chippreset', 'Import', 'preset']);
+  await c.sleep(['300']);
+  check(
+    (await libraryNames()).includes('Deep bass'),
+    'a .chippreset file imports into the library',
+  );
+  const wav = await c['export-wav'](['tmp/run-chip-daw/smoke.wav']);
+  check(/^RIFF 44100 Hz 16-bit 2 ch, [1-9]/.test(wav), `the song exports as WAV (${wav})`);
 
   // MIDI, through the driver's fake keyboard.
   await c.select(['MIDI', 'input', '|', 'Enable', 'MIDI…']);

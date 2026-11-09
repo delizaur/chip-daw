@@ -1,6 +1,6 @@
 <script lang="ts">
   import Arrangement from './ui/arrangement/Arrangement.svelte';
-  import LeftSidebar from './ui/layout/LeftSidebar.svelte';
+  import LibraryPanel from './ui/library/LibraryPanel.svelte';
   import RightSidebar from './ui/layout/RightSidebar.svelte';
   import TopBar from './ui/layout/TopBar.svelte';
   import BottomPanel from './ui/editor/BottomPanel.svelte';
@@ -71,7 +71,7 @@
 
 <div class="app" style:--bottom-height={session.bottomTab === 'pianoRoll' ? '380px' : '300px'}>
   <div class="top"><TopBar /></div>
-  <div class="left"><LeftSidebar /></div>
+  <div class="left"><LibraryPanel /></div>
   <div class="center"><Arrangement /></div>
   <div class="right"><RightSidebar /></div>
   <div class="bottom"><BottomPanel /></div>

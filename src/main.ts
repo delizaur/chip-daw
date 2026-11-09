@@ -1,5 +1,6 @@
 import { mount } from 'svelte';
 import App from './App.svelte';
+import { libraryStore } from './ui/state/library.svelte';
 import { session } from './ui/state/session.svelte';
 import './ui/styles/tokens.css';
 import './ui/styles/global.css';
@@ -14,6 +15,7 @@ export default mount(App, { target });
 
 // Bring back the autosaved project, and save right away when the page is hidden or closed.
 void session.restoreAutosave();
+void libraryStore.load();
 window.addEventListener('pagehide', () => void session.flushAutosave());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) void session.flushAutosave();

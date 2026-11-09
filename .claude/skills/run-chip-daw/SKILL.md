@@ -40,7 +40,8 @@ moves it a bar later and a track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z
 plays the clip back; double-clicks create a clip and open it in the piano roll, where drawing,
 moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
 and the notes play back; Export → New → Import round-trips the project and names it after the
-file; a reload restores the autosave; MIDI can be enabled and a fake MIDI keyboard's note plays,
+file; a reload restores the autosave; a starter preset loads onto a track (undoably), saves back into
+the library, renames, exports as `.chippreset`, deletes and re-imports; the song exports as WAV; MIDI can be enabled and a fake MIDI keyboard's note plays,
 lights the MIDI activity light and stops on note-off, and is ignored with 'MIDI off'; and no
 console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-light`) land in
 `tmp/run-chip-daw/` (gitignored). **Look at them.**
@@ -96,6 +97,10 @@ EOF
 | `screenshot [name]` | save `tmp/run-chip-daw/<name>.png` |
 | `screenshot-element <name> <css…>` | crop to one element, e.g. `screenshot-element fader .meter-fader` |
 | `midi <byte…>` | send a message from the driver's fake MIDI keyboard, e.g. `midi 0x90 60 100` (note on C4), `midi 0x80 60 0` |
+| `download <path> <button name…>` | click a button and save the file it downloads, e.g. `download tmp/x.chippreset Export preset` |
+| `upload <path> <button name…>` | click a button that opens a file dialog and pick `<path>`, e.g. `upload tmp/x.chippreset Import preset` |
+| `export-wav <path>` | click Export WAV, wait for the render, save it, print its format and length |
+| `type <text…>` | type into the focused element (e.g. after `click button Rename preset`) |
 | `export-file <path>` | click Export and save the `.chip` download to `<path>` (relative to the repo) |
 | `import-file <path>` | click Import and choose `<path>` in the file dialog |
 | `errors` | console errors/warnings, page errors and HTTP ≥400 so far, or `none` |
@@ -105,7 +110,12 @@ Options: `--prod` (production build), `--url <url>` (drive an already-running se
 
 Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Go to start`, `Play` (its
 name becomes `Pause` while playing), `Record`, `Overdub`, `Metronome`, `Zoom in`, `Zoom out`,
-`Mute Track N`, `Solo Track N`, `Select Track N`, `New`, `Import`, `Export`, `Quantize`,
+`Mute Track N`, `Solo Track N`, `Select Track N`, `New`, `Import`, `Export` (project),
+`Export WAV`; library: `Save Track N preset`, `New folder`, `Import preset`, `Open <Folder>`,
+a preset's name (select; double-click loads), `Load to Track N`, `Rename preset`,
+`Duplicate preset`, `Export preset`, `Delete preset`, `Rename folder`, `Delete folder`,
+combobox `Move to folder`, textbox `Library preset name`; preset editor: textbox `Preset name`,
+`Save to library`, `Export track preset`; `Quantize`,
 `Quantize selected`, `Fit`, and per sequencer/effect box `<Name> on` (bypass toggle),
 `Move <Name> left`/`right`, `Remove <Name>`; comboboxes `Add sequencer`, `Add effect` (options
 `Arpeggiator`; `Bitcrush`, `Filter`, `Delay`, `Reverb`) and `<Name> type` (replace a box); tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
@@ -197,7 +207,9 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   progress.
 - **Piano roll auditions ring for ~300 ms.** Clicking or dragging notes plays them (not
   recorded). Wait ~600 ms after editing before checking that the meter is silent.
-- **Every run starts with empty storage.** Each driver run is a fresh browser context, so there's
+- **Every run starts with empty storage**, so the library holds just the starter presets (folders
+  Bass, Drums, FX, Leads, all closed).
+  Each driver run is a fresh browser context, so there's
   no autosave from earlier runs. Within one run, `goto` reloads the page and the autosave (written
   0.8 s after the last change) comes back.
 - **Dialogs are auto-accepted** by the driver (e.g. "Start a new project?" on `New`).
