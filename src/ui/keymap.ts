@@ -3,7 +3,8 @@
  * instead of scattered listeners, so conflicts are easy to see.
  *
  * Combos are written like "mod+shift+z" ("mod" = Ctrl on Windows/Linux, Cmd on macOS).
- * Digits use the physical key ("digit1"), so track keys work on any keyboard layout.
+ * Digits use the physical key ("digit1"), so track keys work on any keyboard layout, and so
+ * does the key left of 1 ("backquote": ` on US keyboards, º on Spanish, ^ on German ones).
  */
 /** Return false to leave the key unhandled (its default behaviour then happens). */
 export type KeyHandler = (event: KeyboardEvent) => void | boolean;
@@ -19,6 +20,7 @@ export function comboFromEvent(event: KeyEventLike): string {
   if (event.altKey) parts.push('alt');
   if (event.shiftKey) parts.push('shift');
   if (/^Digit\d$/.test(event.code)) parts.push(event.code.toLowerCase());
+  else if (event.code === 'Backquote') parts.push('backquote');
   else if (event.key === ' ') parts.push('space');
   else parts.push(event.key.toLowerCase());
   return parts.join('+');

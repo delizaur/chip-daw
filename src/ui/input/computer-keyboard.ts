@@ -54,6 +54,8 @@ export function noteName(pitch: number): string {
 }
 
 export interface KeyboardPianoHandlers {
+  /** When false, the keyboard doesn't play (its keys are left to the keymap as shortcuts). */
+  enabled(): boolean;
   octave(): number;
   noteOn(pitch: number): void;
   noteOff(pitch: number): void;
@@ -76,6 +78,7 @@ export function installComputerKeyboard(handlers: KeyboardPianoHandlers): () => 
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.ctrlKey || event.metaKey || event.altKey || isTextInput(event.target)) return;
+    if (!handlers.enabled()) return;
     const control = {
       KeyZ: () => handlers.shiftOctave(-1),
       KeyX: () => handlers.shiftOctave(1),

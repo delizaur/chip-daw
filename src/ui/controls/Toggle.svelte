@@ -6,8 +6,10 @@
 
   interface Props {
     pressed: boolean;
-    /** Accessible name; also shown as a tooltip. */
+    /** Accessible name; also shown as a tooltip unless `title` is given. */
     label: string;
+    /** Tooltip, e.g. with a keyboard shortcut. */
+    title?: string;
     color?: string;
     size?: 'small' | 'medium';
     disabled?: boolean;
@@ -18,6 +20,7 @@
   let {
     pressed,
     label,
+    title,
     color = 'var(--accent)',
     size = 'medium',
     disabled = false,
@@ -33,7 +36,7 @@
   style:--color={color}
   aria-pressed={pressed}
   aria-label={label}
-  title={label}
+  title={title ?? label}
   {disabled}
   onclick={() => onchange(!pressed)}
 >

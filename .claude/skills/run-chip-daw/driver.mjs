@@ -399,6 +399,24 @@ async function smoke(c) {
     ).join(' ');
   await c.click(['button', 'Record']);
   await c.click(['button', 'Play']);
+  // Recording from a stop counts in 4 beats (2 s at 120 BPM) first.
+  await c.sleep(['300']);
+  const countIn = JSON.parse(
+    await c.eval(['[chipDaw.session.countIn, chipDaw.session.position, chipDaw.session.playing]']),
+  );
+  check(
+    countIn[0] >= 3 && countIn[1] === 0 && countIn[2] === false,
+    `Play with Record armed counts in first (${JSON.stringify(countIn)})`,
+  );
+  check(
+    /^[1-4]$/.test(await c.text(['.count-in'])),
+    `the count-in shows the beats left (${await c.text(['.count-in'])})`,
+  );
+  await c.sleep(['1900']);
+  check(
+    JSON.parse(await c.eval(['chipDaw.session.playing'])) === true,
+    'recording starts after the count-in',
+  );
   await c.sleep(['200']);
   await c.keydown(['KeyA']);
   await c.sleep(['300']);
@@ -565,6 +583,107 @@ async function smoke(c) {
   await c.press(['Space']);
   check(rollLevel > 0.005, `drawn notes play back (meter ${rollLevel.toFixed(3)})`);
   await c.screenshot(['4-piano-roll']);
+
+  // The key left of 1 turns the keyboard piano off; its letter keys become shortcuts. Now:
+  // track 4 has two clips side by side from bar 2, track 6 a clip at bar 1.
+  const state = async (expr) => JSON.parse(await c.eval([expr]));
+  const selection = () =>
+    state(
+      '[...chipDaw.session.selectedClipIds].map(id => { const t = chipDaw.session.project.tracks.findIndex(t => t.clips.some(c => c.id === id)); const c = chipDaw.session.project.tracks[t].clips.find(c => c.id === id); return `${t}:${c.startTick}`; }).join(" ")',
+    );
+  await c['click-at'](['.timeline-canvas', '2', '10']); // playhead to the start, focus off buttons
+  await c.press(['Backquote']);
+  check(
+    (await c.attr(['aria-pressed', 'button', 'Computer', 'keyboard', 'piano'])) === 'false',
+    'the key left of 1 turns the keyboard piano off',
+  );
+  await c.keydown(['KeyS']);
+  check((await c.meter()) === 0, 'with the piano off, letter keys play nothing');
+  await c.keyup(['KeyS']);
+  for (const [key, name] of [
+    ['m', 'Metronome'],
+    ['o', 'Overdub'],
+    ['r', 'Record'],
+  ]) {
+    await c.press([key]);
+    const on = await c.attr(['aria-pressed', 'button', name]);
+    await c.press([key]);
+    const off = await c.attr(['aria-pressed', 'button', name]);
+    check(on === 'true' && off === 'false', `${key.toUpperCase()} toggles ${name}`);
+  }
+  await c.press(['Escape']);
+  await c.press(['4']);
+  await c.press(['ArrowRight']);
+  check((await selection()) === '3:3840', 'an arrow selects the clip closest to the playhead');
+  await c.press(['ArrowRight']);
+  const second = await selection();
+  check(/^3:\d+$/.test(second) && second !== '3:3840', `→ selects the next clip (${second})`);
+  await c.press(['ArrowLeft']);
+  check((await selection()) === '3:3840', '← selects the previous clip');
+  await c.press(['ArrowDown']);
+  check((await selection()) === '5:0', '↓ selects the nearest clip on a lower track');
+  await c.press(['ArrowUp']);
+  check((await selection()) === '3:3840', '↑ goes back up');
+
+  const pos = () => state('chipDaw.session.position');
+  const secondStart = Number(second.split(':')[1]);
+  await c.press(['Home']);
+  await c.press(['d']);
+  check((await pos()) === 3840, 'D jumps to the start of the next clip');
+  await c.press(['d']);
+  check(
+    (await pos()) === secondStart && (await selection()) === '3:3840',
+    'D again jumps to the end of the clip',
+  );
+  await c.press(['d']);
+  check(
+    (await pos()) === secondStart && (await selection()) === second,
+    'at a clip end, D selects the next clip (it starts right there)',
+  );
+  await c.press(['a']);
+  check(
+    (await pos()) === secondStart && (await selection()) === '3:3840',
+    'A selects the previous clip (it ends right there)',
+  );
+  await c.press(['a']);
+  check((await pos()) === 3840, 'A again jumps to the start of the clip');
+
+  await c.press(['Enter']);
+  check(
+    (await c.attr(['aria-selected', 'tab', 'Piano', 'roll'])) === 'true' &&
+      (await state('chipDaw.session.editing.clip.startTick')) === 3840,
+    'Enter opens the selected clip in the piano roll',
+  );
+  await c.click(['tab', 'Preset']);
+  await c['click-at'](['.timeline-canvas', '120', '220']); // the first clip on track 4
+  await c.press(['Backquote']); // clicking moved focus; the piano is still off
+  await c.press(['Backquote']);
+  const clipPreset = () =>
+    state(
+      '(() => { const t = chipDaw.session.project.tracks[3]; return [t.clips[0].presetId === t.presetId, chipDaw.session.project.presets.find(p => p.id === t.clips[0].presetId).name]; })()',
+    );
+  check((await clipPreset())[0] === true, 'the first clip uses the track 4 preset');
+  await c.press(['u']);
+  let cp = await clipPreset();
+  check(cp[0] === false, `U makes the clip preset unique (${cp[1]})`);
+  await c.press(['p']);
+  check((await clipPreset())[0] === true, 'P uses the track preset again');
+  await c.press(['t']);
+  check(
+    (await c.text(['.notice'])).includes('already the Track 4 preset'),
+    'T explains when there is nothing to load',
+  );
+  await c.press(['ArrowRight']);
+  await c.press(['t']);
+  cp = await state(
+    '(() => { const t = chipDaw.session.project.tracks[3]; return t.presetId === t.clips[1].presetId; })()',
+  );
+  check(cp === true, 'T loads the clip preset to the track');
+  await c.press(['Backquote']);
+  await c.keydown(['KeyA']);
+  check((await c.meter()) > 0.02, 'the key left of 1 turns the keyboard piano back on');
+  await c.keyup(['KeyA']);
+  await c.sleep(['400']);
 
   // Files: export, start a new project, import it back; autosave survives a reload.
   await c['export-file'](['tmp/run-chip-daw/smoke.chip']);

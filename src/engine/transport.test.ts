@@ -173,8 +173,8 @@ describe('recording', () => {
 
   it('captures live notes with their ticks while armed and playing', () => {
     const { engine, messages, trackId, render } = setup();
+    engine.handle({ type: 'play' }); // then arm: punch in, no count-in
     engine.handle({ type: 'setRecord', armed: true });
-    engine.handle({ type: 'play' });
     render(0.25); // 480 ticks
     engine.handle({ type: 'noteOn', trackId, pitch: 60, velocity: 90 });
     render(0.25);
@@ -195,8 +195,8 @@ describe('recording', () => {
   it('compensates for output latency', () => {
     const { engine, messages, trackId, render } = setup();
     engine.handle({ type: 'setLatency', seconds: 0.05 }); // 96 ticks at 120 BPM
+    engine.handle({ type: 'play' }); // then arm: punch in, no count-in
     engine.handle({ type: 'setRecord', armed: true });
-    engine.handle({ type: 'play' });
     render(0.5);
     engine.handle({ type: 'noteOn', trackId, pitch: 60, velocity: 90 });
     engine.handle({ type: 'pause' });
@@ -206,8 +206,8 @@ describe('recording', () => {
 
   it('ends held notes when recording stops', () => {
     const { engine, messages, trackId, render } = setup();
+    engine.handle({ type: 'play' }); // then arm: punch in, no count-in
     engine.handle({ type: 'setRecord', armed: true });
-    engine.handle({ type: 'play' });
     engine.handle({ type: 'noteOn', trackId, pitch: 64, velocity: 100 });
     render(0.5);
     engine.handle({ type: 'setRecord', armed: false });
@@ -218,8 +218,8 @@ describe('recording', () => {
   it('streams the pass to the UI while recording', () => {
     const { engine, messages, trackId, render } = setup();
     engine.handle({ type: 'seek', tick: PPQ });
+    engine.handle({ type: 'play' }); // then arm: punch in, no count-in
     engine.handle({ type: 'setRecord', armed: true });
-    engine.handle({ type: 'play' });
     expect(messages.filter((m) => m.type === 'takeStarted')).toEqual([
       { type: 'takeStarted', startTick: PPQ },
     ]);
@@ -240,8 +240,8 @@ describe('recording', () => {
 
   it('reports a pass without notes, so the UI can clear its preview', () => {
     const { engine, messages, render } = setup();
+    engine.handle({ type: 'play' }); // then arm: punch in, no count-in
     engine.handle({ type: 'setRecord', armed: true });
-    engine.handle({ type: 'play' });
     render(0.1);
     engine.handle({ type: 'pause' });
     expect(takes(messages)).toEqual([{ startTick: 0, endTick: expect.any(Number), notes: [] }]);
@@ -249,8 +249,8 @@ describe('recording', () => {
 
   it('does not record auditions', () => {
     const { engine, messages, trackId, render } = setup();
+    engine.handle({ type: 'play' }); // then arm: punch in, no count-in
     engine.handle({ type: 'setRecord', armed: true });
-    engine.handle({ type: 'play' });
     engine.handle({ type: 'noteOn', trackId, pitch: 60, velocity: 90, record: false });
     render(0.1);
     engine.handle({ type: 'noteOff', trackId, pitch: 60 });

@@ -8,6 +8,31 @@
   import { installKeymap, type KeyHandler } from './ui/keymap';
   import { session } from './ui/state/session.svelte';
 
+  /**
+   * A shortcut that only applies while the computer keyboard piano is off (its letter keys play
+   * notes otherwise). Returning false leaves the key alone.
+   */
+  const whenPianoOff =
+    (action: () => void | boolean): KeyHandler =>
+    () =>
+      session.keyboardPiano ? false : action();
+
+  /** Arrows: nudge selected notes in the piano roll; else, with the piano off, select clips. */
+  const arrow =
+    (nudge: () => boolean, direction: 'left' | 'right' | 'up' | 'down'): KeyHandler =>
+    () =>
+      nudge() || (!session.keyboardPiano && session.selectAdjacentClip(direction));
+
+  /** Enter opens the selected clip, unless a button or link has focus (Enter presses it). */
+  const enter: KeyHandler = (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('button, a, [role="button"], [role="tab"]')) {
+      return false;
+    }
+    if (session.keyboardPiano) return false;
+    session.openSelectedClip();
+  };
+
   // All keyboard shortcuts live here.
   $effect(() => {
     const bindings: Record<string, KeyHandler> = {
@@ -27,13 +52,26 @@
       'mod+c': () => session.copySelection(),
       'mod+v': () => session.paste(),
       'mod+d': () => session.duplicateSelection(),
-      // Piano roll: transpose / move selected notes. Unhandled otherwise (keeps scrolling).
-      arrowup: () => session.nudgeNotes(1, 0),
-      arrowdown: () => session.nudgeNotes(-1, 0),
+      // Piano roll: transpose / move selected notes. With the keyboard piano off, otherwise
+      // select the neighbouring clip. Unhandled otherwise (keeps scrolling).
+      arrowup: arrow(() => session.nudgeNotes(1, 0), 'up'),
+      arrowdown: arrow(() => session.nudgeNotes(-1, 0), 'down'),
       'shift+arrowup': () => session.nudgeNotes(12, 0),
       'shift+arrowdown': () => session.nudgeNotes(-12, 0),
-      arrowleft: () => session.nudgeNotes(0, -1),
-      arrowright: () => session.nudgeNotes(0, 1),
+      arrowleft: arrow(() => session.nudgeNotes(0, -1), 'left'),
+      arrowright: arrow(() => session.nudgeNotes(0, 1), 'right'),
+      // The key left of 1 turns the computer keyboard piano on and off.
+      backquote: () => session.toggleKeyboardPiano(),
+      // With the keyboard piano off, letter keys are shortcuts.
+      r: whenPianoOff(() => session.toggleRecord()),
+      o: whenPianoOff(() => session.toggleOverdub()),
+      m: whenPianoOff(() => session.toggleMetronome()),
+      a: whenPianoOff(() => session.jumpToClipEdge(-1)),
+      d: whenPianoOff(() => session.jumpToClipEdge(1)),
+      enter,
+      u: whenPianoOff(() => session.clipPresetShortcut('unique')),
+      p: whenPianoOff(() => session.clipPresetShortcut('useTrack')),
+      t: whenPianoOff(() => session.clipPresetShortcut('loadToTrack')),
       // Files.
       'mod+s': () => void session.exportProject(),
       'mod+o': () => void session.importProject(),
@@ -45,6 +83,7 @@
   // The computer keyboard plays notes on the selected track.
   $effect(() =>
     installComputerKeyboard({
+      enabled: () => session.keyboardPiano,
       octave: () => session.keyboardOctave,
       noteOn: (pitch) => session.noteOn('keyboard', pitch, session.keyboardVelocity),
       noteOff: (pitch) => session.noteOff('keyboard', pitch),

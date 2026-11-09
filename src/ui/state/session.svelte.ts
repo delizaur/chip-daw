@@ -46,7 +46,9 @@ import {
   WAV_FILE,
 } from '../../persistence/files';
 import type { RenderReply, RenderRequest } from '../../audio/render.worker';
+import { COUNT_IN_BEATS } from '../../engine/engine';
 import { songEndTick } from '../../engine/offline-render';
+import { adjacentClip, clipEdgeJump, closestClip, type Direction } from '../arrangement/navigation';
 import { MAX_OCTAVE, MIN_OCTAVE, shiftVelocity } from '../input/computer-keyboard';
 
 export type AudioStatus = 'off' | 'starting' | 'running' | 'error';
@@ -151,6 +153,11 @@ class Session {
   selectedTrackIndex = $state(0);
   focusArea = $state<FocusArea>('arrangement');
 
+  /**
+   * Whether the computer keyboard plays notes. Off, its letter keys become shortcuts (record,
+   * overdub, metronome, clip navigation...). Toggled with the key left of 1.
+   */
+  keyboardPiano = $state(true);
   keyboardOctave = $state(4);
   keyboardVelocity = $state(100);
 
@@ -164,6 +171,10 @@ class Session {
 
   // Transport (mirrors the engine; the engine owns the position while playing).
   playing = $state(false);
+  /** Numbers seeks, to ignore engine positions reported before the latest seek arrived. */
+  #seekSeq = 0;
+  /** Count-in beats left before recording starts (0 when not counting in). */
+  countIn = $state(0);
   recordArmed = $state(false);
   overdub = $state(false);
   metronome = $state(false);
@@ -217,7 +228,9 @@ class Session {
         this.masterPeak = message.master;
       } else if (message.type === 'transport') {
         this.playing = message.playing;
-        this.#setPosition(message.tick);
+        this.countIn = message.countIn;
+        // A report from before the engine got our latest seek would move the playhead back.
+        if (message.seekSeq >= this.#seekSeq) this.#setPosition(message.tick);
       } else if (message.type === 'takeStarted') {
         this.liveTake = { startTick: message.startTick, notes: [] };
       } else if (message.type === 'takeNote') {
@@ -360,6 +373,17 @@ class Session {
     this.#engine.send({ type: 'allNotesOff' });
   }
 
+  /** Turns the computer keyboard piano on or off (off: letter keys are shortcuts). */
+  toggleKeyboardPiano(): void {
+    this.keyboardPiano = !this.keyboardPiano;
+    this.releaseSource('keyboard');
+    this.showNotice(
+      this.keyboardPiano
+        ? 'Computer keyboard plays notes.'
+        : 'Computer keyboard shortcuts: R record, O overdub, M metronome, arrows select clips, A/D clip edges, Enter piano roll, U/P/T clip preset buttons.',
+    );
+  }
+
   shiftOctave(delta: 1 | -1): void {
     this.keyboardOctave = Math.min(MAX_OCTAVE, Math.max(MIN_OCTAVE, this.keyboardOctave + delta));
   }
@@ -393,26 +417,33 @@ class Session {
   }
 
   togglePlay(): void {
-    if (this.playing) this.pause();
+    if (this.playing || this.countIn > 0) this.pause();
     else this.play();
   }
 
+  /** Starts playback; with Record armed, the engine counts in first. */
   play(): void {
     void this.startAudio();
-    this.playing = true;
-    this.#positionTime = performance.now();
+    if (this.recordArmed) {
+      this.countIn = COUNT_IN_BEATS; // the engine reports the real count as it goes
+    } else {
+      this.playing = true;
+      this.#positionTime = performance.now();
+    }
     this.#engine.send({ type: 'play' });
   }
 
+  /** Pauses playback, or cancels a count-in. */
   pause(): void {
     this.playing = false;
+    this.countIn = 0;
     this.#engine.send({ type: 'pause' });
   }
 
   seek(tick: Tick): void {
     const target = Math.max(0, tick);
     this.#setPosition(target);
-    this.#engine.send({ type: 'seek', tick: target });
+    this.#engine.send({ type: 'seek', tick: target, seq: ++this.#seekSeq });
   }
 
   toggleRecord(): void {
@@ -504,6 +535,63 @@ class Session {
     this.#placeAndSelect([{ trackId: track.id, clip }], 'Add clip');
   }
 
+  // --- Keyboard navigation ---------------------------------------------------------------
+
+  /** The clip keyboard navigation starts from: a selected clip, on the selected track first. */
+  #anchorClip(): { trackIndex: number; clipId: string } | null {
+    const ids = this.selectedClipIds;
+    if (ids.size === 0) return null;
+    const tracks = this.project.tracks;
+    const order = [this.selectedTrackIndex, ...tracks.keys()];
+    for (const trackIndex of order) {
+      const clip = tracks[trackIndex]?.clips.find((c) => ids.has(c.id));
+      if (clip) return { trackIndex, clipId: clip.id };
+    }
+    return null;
+  }
+
+  #selectClipAt(trackIndex: number, clipId: string): void {
+    this.selectTrack(trackIndex);
+    this.selectClips([clipId]);
+    this.focusArea = 'arrangement';
+  }
+
+  /**
+   * Arrow keys: select the neighbouring clip of the selected one, or with none selected the
+   * clip closest to the playhead. Returns false when there's nowhere to go.
+   */
+  selectAdjacentClip(direction: Direction): boolean {
+    const tracks = this.project.tracks;
+    const anchor = this.#anchorClip();
+    const target = anchor
+      ? adjacentClip(tracks, anchor, direction)
+      : closestClip(tracks, this.selectedTrackIndex, this.position);
+    if (!target) return false;
+    this.#selectClipAt(target.trackIndex, target.clipId);
+    return true;
+  }
+
+  /**
+   * A (-1) / D (+1): moves the playhead to the previous/next clip edge on the selected track,
+   * selecting that clip (so pressing again walks from clip to clip).
+   */
+  jumpToClipEdge(direction: 1 | -1): void {
+    const track = this.selectedTrack;
+    if (!track) return;
+    const selected = track.clips.find((c) => this.selectedClipIds.has(c.id))?.id;
+    const jump = clipEdgeJump(track, this.position, direction, selected);
+    if (!jump) return;
+    this.seek(jump.tick);
+    this.#selectClipAt(this.selectedTrackIndex, jump.clipId);
+  }
+
+  /** Enter: opens the selected clip in the piano roll. */
+  openSelectedClip(): void {
+    const anchor = this.#anchorClip();
+    if (anchor) this.openPianoRoll(anchor.trackIndex, anchor.clipId);
+    else this.showNotice('Select a clip to open it in the piano roll.');
+  }
+
   // --- Clip presets -----------------------------------------------------------------------
 
   /** Clips selected on the selected track (the ones the clip preset buttons act on). */
@@ -527,6 +615,30 @@ class Session {
     const view = this.presetView;
     if (view?.kind === 'clip' && !view.isTrackPreset) {
       this.run(loadClipPresetToTrack(view.clipIds[0]!));
+    }
+  }
+
+  /**
+   * The U / P / T shortcuts: the clip preset buttons, saying why when they can't apply (the
+   * buttons are disabled in those cases instead).
+   */
+  clipPresetShortcut(action: 'unique' | 'useTrack' | 'loadToTrack'): void {
+    const view = this.presetView;
+    if (!view || view.kind === 'track') {
+      this.showNotice('Select a clip on this track first.');
+    } else if (action === 'useTrack') {
+      if (view.kind === 'clip' && view.isTrackPreset) {
+        this.showNotice('The clip already uses the track preset.');
+      } else this.useTrackPresetForSelectedClips();
+    } else if (view.kind === 'mixed') {
+      this.showNotice('The selected clips use different presets. Select one clip.');
+    } else if (action === 'unique') {
+      if (view.canMakeUnique) this.makeSelectedClipsUnique();
+      else this.showNotice('Nothing else uses this preset: it is already unique.');
+    } else if (view.isTrackPreset) {
+      this.showNotice(`This is already the ${view.track.name} preset.`);
+    } else {
+      this.loadSelectedClipPresetToTrack();
     }
   }
 
@@ -832,7 +944,7 @@ class Session {
         { type: 'setMetronome', enabled: this.metronome },
         { type: 'setRecord', armed: this.recordArmed },
         { type: 'setOverdub', enabled: this.overdub },
-        { type: 'seek', tick: this.position },
+        { type: 'seek', tick: this.position, seq: ++this.#seekSeq },
       ]);
       this.audioStatus = 'running';
       this.audioError = null;

@@ -11,6 +11,7 @@
     wheel           Shift+wheel or horizontal wheel scrolls, Ctrl/Cmd+wheel zooms
 -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { moveClips, resizeClip } from '../../model/commands';
   import { PPQ } from '../../model/constants';
   import { floorTo, snapTick, ticksPerBar } from '../../model/time';
@@ -144,12 +145,37 @@
       height,
       ghosts,
       themeVersion,
+      presetNames,
       session.selectedTrackIndex,
       session.selectedClipIds,
       session.position,
       session.liveTake,
     ];
     draw();
+  });
+
+  /** Scrolls the view (when needed) so ticks `start`..`end` are visible. */
+  function reveal(start: Tick, end: Tick = start) {
+    if (width === 0) return;
+    const margin = 24;
+    const left = tickToX(view, start);
+    const right = tickToX(view, end);
+    if (left >= 0 && right <= width - margin) return;
+    const scrollTick = Math.max(0, start - (width * 0.1) / view.pixelsPerTick);
+    if (scrollTick !== view.scrollTick) view = { ...view, scrollTick };
+  }
+
+  // Keyboard navigation can select a clip or move the playhead off screen: bring it into view.
+  $effect(() => {
+    const ids = session.selectedClipIds;
+    if (ids.size !== 1) return;
+    const [id] = ids;
+    const clip = tracks.flatMap((t) => t.clips).find((c) => c.id === id);
+    if (clip) untrack(() => reveal(clip.startTick, clip.startTick + clip.lengthTicks));
+  });
+  $effect(() => {
+    const position = session.position;
+    if (!session.playing) untrack(() => reveal(position));
   });
 
   // Animate the playhead while playing.
@@ -391,6 +417,11 @@
         onpointercancel={onpointerup}
         {ondblclick}
       ></canvas>
+      {#if session.countIn > 0}
+        <div class="count-in" role="status" aria-label="Count-in">
+          {#key session.countIn}<span>{session.countIn}</span>{/key}
+        </div>
+      {/if}
     </div>
   </div>
 </section>
@@ -483,8 +514,45 @@
   }
 
   .timeline {
+    position: relative;
     flex: 1;
     min-width: 0;
+  }
+
+  /* Count-in before recording: a big beat number over the timeline, popping on each beat. */
+  .count-in {
+    position: absolute;
+    top: 48px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    place-items: center;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--c-red) 85%, transparent);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 48px;
+    font-weight: 800;
+    pointer-events: none;
+  }
+
+  .count-in span {
+    animation: count-pop 0.3s ease-out;
+  }
+
+  @keyframes count-pop {
+    from {
+      transform: scale(1.5);
+      opacity: 0.4;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .count-in span {
+      animation: none;
+    }
   }
 
   .timeline-canvas {

@@ -33,4 +33,10 @@ describe('comboFromEvent', () => {
     // AZERTY: the unshifted "1" key produces "&"
     expect(comboFromEvent(key('&', 'Digit1'))).toBe('digit1');
   });
+
+  it('names the key left of 1 by position, whatever it types', () => {
+    expect(comboFromEvent(key('`', 'Backquote'))).toBe('backquote');
+    expect(comboFromEvent(key('º', 'Backquote'))).toBe('backquote'); // Spanish
+    expect(comboFromEvent(key('Dead', 'Backquote'))).toBe('backquote'); // German ^ (dead key)
+  });
 });

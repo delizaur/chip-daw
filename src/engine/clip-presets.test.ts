@@ -93,8 +93,8 @@ describe('clip presets in the engine', () => {
     const { engine, trackId, render, transpose, addClip } = setup();
     addClip(0, 8 * PPQ); // an empty clip: only the live note sounds
     transpose({ trackId }, 12);
+    engine.handle({ type: 'play' }); // then arm: punch in, no count-in
     engine.handle({ type: 'setRecord', armed: true });
-    engine.handle({ type: 'play' });
     render(0.2);
 
     engine.handle({ type: 'setOverdub', enabled: true });

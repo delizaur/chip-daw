@@ -34,15 +34,20 @@ It checks: audio starts on the first click; the preset chain can add, replace, b
 remove boxes, a delay echoes after the note and notes play through an arpeggiator; holding `A` plays a note (meter > 0) and releasing it
 goes silent; the preset editor's wave selector and Attack knob change the synth as single undo
 steps that Ctrl+Z restores; `X`/`Z` shift the keyboard octave; the master fader raises the meter and
-undoes; mute toggles; key `3` selects track 3 and notes then play there; record + play + a held key
-makes a clip exactly as long as the recording (one undo step); dragging the clip on the canvas
+undoes; mute toggles; key `3` selects track 3 and notes then play there; record + play counts in
+4 beats (countdown shown, transport still) and then a held key makes a clip exactly as long as the
+recording (one undo step); dragging the clip on the canvas
 moves it a bar later and a track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z restores; Space
 plays the clip back; clip presets: editing track 3's preset (which those clips use) switches the
 track to a copy with a notice while the clips keep theirs, selecting a clip shows "Clip preset ·
 Used by 2 clips", and Make unique, Use track preset, Load to track and the back button work;
 double-clicks create a clip and open it in the piano roll, where drawing,
 moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
-and the notes play back; Export → New → Import round-trips the project and names it after the
+and the notes play back; the key left of 1 turns the keyboard piano off (letters then play
+nothing), R/O/M toggle record/overdub/metronome, arrows select the closest/next/previous/lower/upper
+clip, A/D walk the playhead along clip edges (selecting the clip at a shared edge), Enter opens the
+piano roll, U/P/T run the clip preset buttons (T explains when there's nothing to load), and the
+key turns the piano back on; Export → New → Import round-trips the project and names it after the
 file; a reload restores the autosave; a starter preset loads onto a track (undoably), saves back into
 the library, renames, exports as `.chippreset`, deletes and re-imports; the song exports as WAV; MIDI can be enabled and a fake MIDI keyboard's note plays,
 lights the MIDI activity light and stops on note-off, and is ignored with 'MIDI off'; and no
@@ -206,6 +211,12 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   `*-at` commands with the coordinates above, then check results through `eval chipDaw.session…`.
 - **Clicking an empty lane moves the playhead when stopped.** It's how you place the paste
   position (`click-at canvas 2 10` on the ruler also works). Paste goes to the selected track.
+- **Recording from a stop counts in 4 beats first** (2 s at 120 BPM): after Record + Play, wait
+  ~2.1 s before playing notes (`chipDaw.session.countIn` is the beats left; `.count-in` shows it).
+  Arm Record while already playing to punch in without a count-in.
+- **The key left of 1 (`press Backquote`) turns the keyboard piano off**, and its letter keys
+  become shortcuts (`press r`, `press d`, `press ArrowRight`...); press it again to play notes.
+  Toggle button: `Computer keyboard piano` (`aria-pressed`).
 - **Recording records the selected track.** Record arm + Play, then hold keys; the clip appears
   as a red region with live notes while recording, and becomes a clip spanning exactly the
   recorded time when you press Pause (or disarm Record). Its length depends on timing, so check

@@ -10,6 +10,8 @@
   const bpm = $derived(session.project.tempoMap.tempos[0]?.bpm ?? 120);
   const meter = $derived(session.project.tempoMap.meters[0]!);
   const position = $derived(formatPosition(session.project.tempoMap, session.position));
+  /** Playing, or counting in before recording. */
+  const running = $derived(session.playing || session.countIn > 0);
 
   function commitTempo(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
@@ -36,14 +38,16 @@
   >
   <Toggle
     size="small"
-    label={session.playing ? 'Pause' : 'Play'}
+    label={running ? 'Pause' : 'Play'}
+    title={running ? 'Pause (Space)' : 'Play (Space); with Record on, counts in 4 beats first'}
     color="var(--c-green)"
-    pressed={session.playing}
-    onchange={() => session.togglePlay()}>{session.playing ? '❚❚' : '▶'}</Toggle
+    pressed={running}
+    onchange={() => session.togglePlay()}>{running ? '❚❚' : '▶'}</Toggle
   >
   <Toggle
     size="small"
     label="Record"
+    title="Record (R with the keyboard piano off)"
     color="var(--c-red)"
     pressed={session.recordArmed}
     onchange={() => session.toggleRecord()}>●</Toggle
@@ -51,6 +55,7 @@
   <Toggle
     size="small"
     label="Overdub"
+    title="Overdub (O with the keyboard piano off)"
     color="var(--c-red)"
     pressed={session.overdub}
     onchange={() => session.toggleOverdub()}>OVR</Toggle
@@ -58,6 +63,7 @@
   <Toggle
     size="small"
     label="Metronome"
+    title="Metronome (M with the keyboard piano off)"
     color="var(--c-blue)"
     pressed={session.metronome}
     onchange={() => session.toggleMetronome()}>♩</Toggle

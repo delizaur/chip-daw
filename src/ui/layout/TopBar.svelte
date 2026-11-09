@@ -96,13 +96,24 @@
   <div class="spacer"></div>
 
   <MidiSelect />
-  <span
+  <button
+    type="button"
     class="keys"
-    title="Computer keyboard: A–; play notes on the selected track, Z/X octave, C/V velocity"
+    class:off={!session.keyboardPiano}
+    aria-label="Computer keyboard piano"
+    aria-pressed={session.keyboardPiano}
+    title={session.keyboardPiano
+      ? 'Computer keyboard plays notes: A–; on the selected track, Z/X octave, C/V velocity. Click or press the key left of 1 to use letter keys as shortcuts.'
+      : 'Letter keys are shortcuts: R record, O overdub, M metronome, arrows select clips, A/D clip edges, Enter piano roll, U make unique, P use track preset, T load to track. Click or press the key left of 1 to play notes again.'}
+    onclick={() => session.toggleKeyboardPiano()}
   >
     <span aria-hidden="true">⌨</span>
-    {noteName((session.keyboardOctave + 1) * 12)} · vel {session.keyboardVelocity}
-  </span>
+    {#if session.keyboardPiano}
+      {noteName((session.keyboardOctave + 1) * 12)} · vel {session.keyboardVelocity}
+    {:else}
+      shortcuts
+    {/if}
+  </button>
 
   {#if session.notice}
     <div class="notice {session.notice.kind}" role="status">{session.notice.text}</div>
@@ -275,9 +286,21 @@
   }
 
   .keys {
+    padding: 2px var(--space-2);
+    border-radius: var(--r-s);
     font-family: var(--font-mono);
     font-size: var(--text-s);
     color: var(--ink-dim);
     white-space: nowrap;
+  }
+
+  .keys:hover {
+    color: var(--ink);
+    background: var(--panel-raised);
+  }
+
+  .keys.off {
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line);
   }
 </style>

@@ -1,5 +1,6 @@
 import { applyPatches, enablePatches } from 'immer';
 import type { RecordedNote, RecordedTake } from '../model/commands';
+import { PPQ } from '../model/constants';
 import type { Project, Tick } from '../model/types';
 import { bpmAt, ticksPerBar, ticksPerBeat, ticksPerSecond } from '../model/time';
 import { SmoothedValue, softClip, volumeToGain } from './dsp';
@@ -12,6 +13,13 @@ enablePatches();
 
 /** How often meters and the transport position are reported to the UI. */
 const REPORT_RATE_HZ = 30;
+/** Beats counted in (with clicks) before recording starts from a stop. */
+export const COUNT_IN_BEATS = 4;
+/**
+ * Notes played this close before the end of the count-in (a sixteenth) are early hits for the
+ * downbeat: they're recorded at the start instead of being dropped.
+ */
+const EARLY_NOTE_TICKS = PPQ / 4;
 
 interface Take {
   startTick: Tick;
@@ -46,6 +54,14 @@ export class Engine {
   #overdub = false;
   #latencySeconds = 0;
   #take: Take | null = null;
+  /** `seq` of the last seek message handled (echoed in transport reports). */
+  #seekSeq = 0;
+  /** Count-in ticks still to go before playback starts (0 when not counting in). */
+  #countIn: Tick = 0;
+  /** Length of the current count-in, in ticks. */
+  #countInTotal: Tick = 0;
+  /** Notes played in the last moment of the count-in, still held ("trackId:pitch" → note). */
+  readonly #earlyNotes = new Map<string, { trackId: string; pitch: number; velocity: number }>();
   readonly #window: PlayWindow = { start: 0, end: 0, ticksPerSample: 0 };
   /** Shared with every box each block (mutated, never reallocated). */
   readonly #context: BlockContext = { bpm: 120, clockTick: 0, ticksPerSample: 0, playing: false };
@@ -98,25 +114,42 @@ export class Engine {
         track?.noteOn(message.pitch, message.velocity, presetId);
         if (message.record !== false) {
           this.#recordNoteOn(message.trackId, message.pitch, message.velocity);
+          if (this.#countIn > 0 && this.#countIn <= EARLY_NOTE_TICKS && this.#recordArmed) {
+            const { trackId, pitch, velocity } = message;
+            this.#earlyNotes.set(`${trackId}:${pitch}`, { trackId, pitch, velocity });
+          }
         }
         break;
       }
       case 'noteOff':
         this.#tracksById.get(message.trackId)?.noteOff(message.pitch);
         this.#recordNoteOff(message.trackId, message.pitch);
+        this.#earlyNotes.delete(`${message.trackId}:${message.pitch}`);
         break;
       case 'allNotesOff':
         for (const track of this.#tracks) track.allNotesOff();
         this.#releaseHeldTakeNotes();
+        this.#earlyNotes.clear();
         break;
       case 'play':
-        if (this.#playing) break;
-        this.#playing = true;
-        for (const track of this.#tracks) track.locate(this.#position);
-        this.#updateTake();
+        if (this.#playing || this.#countIn > 0) break;
+        if (this.#recordArmed && this.#project) {
+          // Recording from a stop: count in first (playback starts in `process`).
+          this.#countInTotal = COUNT_IN_BEATS * ticksPerBeat(this.#project.tempoMap.meters[0]!);
+          this.#countIn = this.#countInTotal;
+          this.#reportTransport();
+          break;
+        }
+        this.#startPlaying();
         this.#reportTransport();
         break;
       case 'pause':
+        if (this.#countIn > 0) {
+          this.#countIn = 0;
+          this.#earlyNotes.clear();
+          this.#reportTransport();
+          break;
+        }
         if (!this.#playing) break;
         this.#playing = false;
         for (const track of this.#tracks) track.stopPlayback();
@@ -124,6 +157,7 @@ export class Engine {
         this.#reportTransport();
         break;
       case 'seek':
+        this.#seekSeq = message.seq ?? this.#seekSeq;
         this.#endTake();
         this.#position = Math.max(0, message.tick);
         for (const track of this.#tracks) track.locate(this.#position);
@@ -144,6 +178,29 @@ export class Engine {
         this.#latencySeconds = Math.max(0, message.seconds);
         break;
     }
+  }
+
+  #startPlaying(): void {
+    this.#playing = true;
+    for (const track of this.#tracks) track.locate(this.#position);
+    this.#updateTake();
+  }
+
+  /** The count-in is over: playback and recording start, with notes held for the downbeat. */
+  #endCountIn(): void {
+    this.#countIn = 0;
+    this.#startPlaying();
+    const take = this.#take;
+    if (take) {
+      for (const [key, early] of this.#earlyNotes) {
+        const note: RecordedNote = { ...early, startTick: take.startTick, endTick: take.startTick };
+        const index = take.notes.push(note) - 1;
+        take.held.set(key, index);
+        this.#emitTakeNote(take, index, true);
+      }
+    }
+    this.#earlyNotes.clear();
+    this.#reportTransport();
   }
 
   /** Brings the runtime graph in line with the project. */
@@ -263,22 +320,45 @@ export class Engine {
     // The tempo is read once per block (a tempo change lands at most 128 samples late).
     const bpm = this.#bpm();
     const ticksPerSample = ticksPerSecond(bpm) / this.sampleRate;
+    const blockTicks = ticksPerSample * frames;
+
+    // Count-in: clicks on its beats; playback starts at the exact sample where it ends.
+    let countInClick = -1;
+    let countInAccent = false;
+    let lead = 0;
+    if (this.#countIn > 0 && this.#project) {
+      const beat = ticksPerBeat(this.#project.tempoMap.meters[0]!);
+      const elapsed = this.#countInTotal - this.#countIn;
+      const nextBeat = Math.ceil(elapsed / beat - 1e-9) * beat;
+      if (nextBeat < Math.min(elapsed + blockTicks, this.#countInTotal)) {
+        countInClick = Math.min(frames - 1, Math.floor((nextBeat - elapsed) / ticksPerSample));
+        countInAccent = Math.round(nextBeat) === 0;
+      }
+      if (this.#countIn <= blockTicks) {
+        lead = this.#countIn;
+        this.#endCountIn();
+      } else {
+        this.#countIn -= blockTicks;
+      }
+    }
+
     let window: PlayWindow | null = null;
     if (this.#playing) {
+      // `lead`: the part of this block still counting in, before the song position.
       window = this.#window;
       window.ticksPerSample = ticksPerSample;
-      window.start = this.#position;
-      window.end = this.#position + ticksPerSample * frames;
+      window.start = this.#position - lead;
+      window.end = window.start + blockTicks;
     }
     const context = this.#context;
     context.bpm = bpm;
     context.ticksPerSample = ticksPerSample;
     context.playing = this.#playing;
-    context.clockTick = this.#playing ? this.#position : this.#freeTick;
+    context.clockTick = window ? window.start : this.#freeTick;
     if (!this.#playing) this.#freeTick += ticksPerSample * frames;
 
     for (const track of this.#tracks) track.process(mixLeft, mixRight, frames, window, context);
-    this.#processMetronome(mixLeft, mixRight, frames, window);
+    this.#processMetronome(mixLeft, mixRight, frames, window, countInClick, countInAccent);
 
     let peak = this.#masterPeak;
     for (let i = 0; i < frames; i++) {
@@ -302,10 +382,12 @@ export class Engine {
     right: Float32Array,
     frames: number,
     window: PlayWindow | null,
+    countInClick: number,
+    countInAccent: boolean,
   ) {
-    let offset = -1;
-    let accent = false;
-    if (window && this.#metronome.enabled && this.#project) {
+    let offset = countInClick;
+    let accent = countInAccent;
+    if (offset < 0 && window && this.#metronome.enabled && this.#project) {
       const meter = this.#project.tempoMap.meters[0]!;
       const beat = ticksPerBeat(meter);
       const nextBeat = Math.ceil(window.start / beat - 1e-9) * beat;
@@ -326,12 +408,20 @@ export class Engine {
       this.#emit({ type: 'meters', master: this.#masterPeak });
       this.#lastReportedPeak = this.#masterPeak;
     }
-    if (this.#playing) this.#reportTransport();
+    if (this.#playing || this.#countIn > 0) this.#reportTransport();
     this.#masterPeak = 0;
     this.#framesSinceReport = 0;
   }
 
   #reportTransport(): void {
-    this.#emit({ type: 'transport', playing: this.#playing, tick: this.#position });
+    const beat = this.#project ? ticksPerBeat(this.#project.tempoMap.meters[0]!) : PPQ;
+    const countIn = this.#countIn > 0 ? Math.ceil(this.#countIn / beat - 1e-9) : 0;
+    this.#emit({
+      type: 'transport',
+      playing: this.#playing,
+      tick: this.#position,
+      countIn,
+      seekSeq: this.#seekSeq,
+    });
   }
 }

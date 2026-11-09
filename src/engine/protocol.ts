@@ -25,7 +25,8 @@ export type UiToEngine =
   // Transport
   | { type: 'play' }
   | { type: 'pause' }
-  | { type: 'seek'; tick: Tick }
+  /** `seq` numbers the UI's seeks; transport reports echo the last one handled. */
+  | { type: 'seek'; tick: Tick; seq?: number }
   /** Record arm: while armed and playing, live notes are captured into a take. */
   | { type: 'setRecord'; armed: boolean }
   /** Overdub mode: while recording, live notes play through the clip under the playhead. */
@@ -41,7 +42,12 @@ export type EngineToUi =
       /** Peak absolute sample value of the master output since the last report (0..1). */
       master: number;
     }
-  | { type: 'transport'; playing: boolean; tick: Tick }
+  /**
+   * Transport state. `countIn` is the number of count-in beats still to go before playback
+   * (and recording) starts, 0 when not counting in. `seekSeq` is the `seq` of the last seek
+   * handled, so the UI can ignore positions reported before its latest seek arrived.
+   */
+  | { type: 'transport'; playing: boolean; tick: Tick; countIn: number; seekSeq: number }
   /** A recording pass started (record armed and playing). */
   | { type: 'takeStarted'; startTick: Tick }
   /**
