@@ -15,16 +15,16 @@ function setup() {
   engine.handle({ type: 'loadProject', project: history.state });
   history.subscribe(({ patches }) => engine.handle({ type: 'applyPatches', patches }));
   const track = history.state.tracks[0]!;
-  const address = { trackId: track.id, segmentId: track.segments[0]!.id };
-  const synthId = track.segments[0]!.preset.synth.id;
+  const address = { trackId: track.id };
+  const synthId = history.state.presets.find((p) => p.id === track.presetId)!.synth.id;
   const noteOn = (pitch: number) =>
     engine.handle({ type: 'noteOn', trackId: track.id, pitch, velocity: 100 });
   const noteOff = (pitch: number) => engine.handle({ type: 'noteOff', trackId: track.id, pitch });
   const render = (seconds: number) => renderBlocks((l, r) => engine.process(l, r), seconds).left;
   // A short, percussive synth makes separate notes easy to count.
-  history.run(setBoxParam({ ...address, boxId: synthId }, 'decay', 0.03));
-  history.run(setBoxParam({ ...address, boxId: synthId }, 'sustain', 0));
-  history.run(setBoxParam({ ...address, boxId: synthId }, 'release', 0.01));
+  history.run(setBoxParam({ target: address, boxId: synthId }, 'decay', 0.03));
+  history.run(setBoxParam({ target: address, boxId: synthId }, 'sustain', 0));
+  history.run(setBoxParam({ target: address, boxId: synthId }, 'release', 0.01));
   render(0.1); // the master volume fades in after loading; let it settle
   return { engine, history, address, noteOn, noteOff, render, trackId: track.id };
 }
@@ -70,7 +70,7 @@ describe('preset chain in the engine', () => {
     const { history, address, noteOn, noteOff, render } = setup();
     const arp = createBox('seq.arp');
     history.run(addBox(address, arp));
-    history.run(setBoxParam({ ...address, boxId: arp.id }, 'gate', 1));
+    history.run(setBoxParam({ target: address, boxId: arp.id }, 'gate', 1));
     noteOn(60);
     render(0.3);
     history.run(removeBox(address, arp.id));
@@ -86,7 +86,7 @@ describe('preset chain in the engine', () => {
       placeClips([
         {
           trackId,
-          clip: createClip(0, 4 * PPQ, [
+          clip: createClip(0, 4 * PPQ, history.state.tracks[0]!.presetId, [
             { id: 'a', tick: 0, durationTicks: 2 * PPQ, pitch: 60, velocity: 100 },
             { id: 'b', tick: 0, durationTicks: 2 * PPQ, pitch: 67, velocity: 100 },
           ]),

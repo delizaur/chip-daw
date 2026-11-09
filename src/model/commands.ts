@@ -3,7 +3,8 @@ import { constrainParam, getParamDescriptor } from './boxes/registry';
 import { absoluteNotes, clipEnd, createClip, placeClip, setClipStart } from './clips';
 import type { Command } from './history';
 import { createId } from './ids';
-import type { BoxInstance, Clip, Note, Project, Tick, Track } from './types';
+import { editPreset, ensurePreset, prunePresets, type PresetTarget } from './presets';
+import type { BoxInstance, Clip, Note, Preset, Project, Tick, Track } from './types';
 
 export type ProjectCommand = Command<Project>;
 
@@ -16,21 +17,14 @@ function findTrack(project: Draft<Project>, trackId: string): Draft<Track> {
 }
 
 export interface BoxAddress {
-  trackId: string;
-  segmentId: string;
+  /** The track preset (copy on write) or a clip preset. */
+  target: PresetTarget;
   boxId: string;
 }
 
-function findBox(project: Draft<Project>, address: BoxAddress): Draft<BoxInstance> {
-  const segment = findTrack(project, address.trackId).segments.find(
-    (s) => s.id === address.segmentId,
-  );
-  if (!segment) throw new Error(`Segment ${address.segmentId} not found`);
-  const { preset } = segment;
-  const box = [...preset.sequencers, preset.synth, ...preset.effects].find(
-    (b) => b.id === address.boxId,
-  );
-  if (!box) throw new Error(`Box ${address.boxId} not found`);
+function findBox(preset: Preset, boxId: string): BoxInstance {
+  const box = [...preset.sequencers, preset.synth, ...preset.effects].find((b) => b.id === boxId);
+  if (!box) throw new Error(`Box ${boxId} not found`);
   return box;
 }
 
@@ -43,12 +37,13 @@ export function setBoxParam(
 ): ProjectCommand {
   return {
     label,
-    recipe: (project) => {
-      const box = findBox(project, address);
-      const param = getParamDescriptor(box.type, paramId);
-      if (!param) throw new Error(`Unknown param "${paramId}" for ${box.type}`);
-      box.params[paramId] = constrainParam(param, value);
-    },
+    recipe: (project) =>
+      editPreset(project, address.target, (preset) => {
+        const box = findBox(preset, address.boxId);
+        const param = getParamDescriptor(box.type, paramId);
+        if (!param) throw new Error(`Unknown param "${paramId}" for ${box.type}`);
+        box.params[paramId] = constrainParam(param, value);
+      }),
   };
 }
 
@@ -112,14 +107,27 @@ export interface ClipPlacement {
   trackId: string;
   /** A plain (non-draft) clip, typically from cloneClip or createClip. */
   clip: Clip;
+  /**
+   * The clip's preset, added to the project if it isn't there (pasting clips whose preset was
+   * removed after copying, or copied from another project).
+   */
+  preset?: Preset;
 }
 
-/** Adds clips, trimming whatever they overlap. Used for new clips, paste and duplicate. */
+/**
+ * Adds clips, trimming whatever they overlap. Used for new clips, paste and duplicate. Presets
+ * no longer used by anything (clips trimmed away) are removed, as in every command that can
+ * drop the last use of a preset.
+ */
 export function placeClips(placements: ClipPlacement[], label = 'Add clip'): ProjectCommand {
   return {
     label,
     recipe: (project) => {
-      for (const { trackId, clip } of placements) placeClip(findTrack(project, trackId), clip);
+      for (const { trackId, clip, preset } of placements) {
+        if (preset) ensurePreset(project, preset);
+        placeClip(findTrack(project, trackId), clip);
+      }
+      prunePresets(project);
     },
   };
 }
@@ -130,6 +138,7 @@ export function deleteClips(clipIds: Iterable<string>): ProjectCommand {
     label: ids.size === 1 ? 'Delete clip' : 'Delete clips',
     recipe: (project) => {
       for (const track of project.tracks) track.clips = track.clips.filter((c) => !ids.has(c.id));
+      prunePresets(project);
     },
   };
 }
@@ -166,6 +175,7 @@ export function moveClips(
         clip.startTick += dt;
         placeClip(project.tracks[from + dTracks]!, clip);
       }
+      prunePresets(project);
     },
   };
 }
@@ -190,6 +200,7 @@ export function resizeClip(
       setClipStart(clip, newStart);
       clip.lengthTicks = Math.max(1, end - newStart);
       placeClip(track, clip);
+      prunePresets(project);
     },
   };
 }
@@ -221,6 +232,10 @@ const MIN_NOTE_TICKS = 15;
  * to fit notes played slightly early), so nothing outside it is touched. Without overdub, the new
  * clip replaces what was underneath. With overdub, it merges with every clip it overlaps into one
  * clip containing all their notes.
+ *
+ * A new clip gets the track preset (shared, not copied: copy on write keeps it safe). A merged
+ * clip keeps the preset of the first clip it merged with, since overdubbed notes are heard
+ * through that clip's preset while recording.
  */
 export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand {
   return {
@@ -251,9 +266,11 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
           };
         });
 
+        let presetId = track.presetId;
         if (overdub) {
           // Automation of merged clips is not kept yet; nothing creates automation before Phase 4.
           const overlapping = track.clips.filter((c) => c.startTick < end && clipEnd(c) > start);
+          if (overlapping[0]) presetId = overlapping[0].presetId;
           for (const clip of overlapping) {
             start = Math.min(start, clip.startTick);
             end = Math.max(end, clipEnd(clip));
@@ -267,10 +284,12 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
         const clip = createClip(
           start,
           end - start,
+          presetId,
           notes.map((n) => ({ ...n, tick: n.tick - start })),
         );
         placeClip(track, clip);
       }
+      prunePresets(project);
     },
   };
 }

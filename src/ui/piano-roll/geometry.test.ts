@@ -20,7 +20,7 @@ import {
 } from './geometry';
 
 const view: RollView = { pixelsPerTick: 40 / PPQ, scrollTick: 0, topPitch: 72 }; // 40 px/beat
-const clip = createClip(PPQ, 4 * PPQ, [
+const clip = createClip(PPQ, 4 * PPQ, 'p', [
   { id: 'a', tick: 0, durationTicks: PPQ, pitch: 60, velocity: 100 }, // x 84..124
   { id: 'b', tick: PPQ / 8, durationTicks: PPQ, pitch: 64, velocity: 50 }, // stem x 89
 ]);

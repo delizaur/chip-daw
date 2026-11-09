@@ -42,6 +42,7 @@
   let themeVersion = $state(0);
 
   const tracks = $derived(session.project.tracks);
+  const presetNames = $derived(new Map(session.project.presets.map((p) => [p.id, p.name])));
   const meter = $derived(session.project.tempoMap.meters[0]!);
   const height = $derived(RULER_HEIGHT + tracks.length * LANE_HEIGHT);
 
@@ -117,6 +118,8 @@
       playhead: session.playheadAt(),
       take: takePreview(),
       ghosts,
+      presetNames,
+      font: getComputedStyle(canvas).getPropertyValue('--font-ui') || 'sans-serif',
     });
   }
 

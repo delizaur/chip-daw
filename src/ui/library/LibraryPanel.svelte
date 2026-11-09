@@ -13,7 +13,7 @@
   const looseFolder = $derived(presetsIn(library, null));
   const trackNumber = $derived(session.selectedTrackIndex + 1);
   /** The library preset the selected track's preset was loaded from, to mark it. */
-  const loadedFrom = $derived(session.selectedTrack?.segments[0]?.preset.libraryOrigin);
+  const loadedFrom = $derived(session.selectedTrackPreset?.libraryOrigin);
   const selectedPreset = $derived(
     store.selection?.kind === 'preset' ? findPreset(library, store.selection.id) : undefined,
   );
@@ -88,7 +88,7 @@
     </div>
   </header>
 
-  <button type="button" class="save" onclick={() => store.saveTrackPreset()}>
+  <button type="button" class="save" onclick={() => store.saveToLibrary()}>
     Save Track {trackNumber} preset
   </button>
 
@@ -154,8 +154,10 @@
           aria-label="Duplicate preset"
           onclick={() => store.duplicatePreset(id)}>Duplicate</button
         >
-        <button type="button" aria-label="Export preset" onclick={() => store.exportPreset(id)}
-          >Export</button
+        <button
+          type="button"
+          aria-label="Export preset"
+          onclick={() => store.exportLibraryPreset(id)}>Export</button
         >
         <button
           type="button"

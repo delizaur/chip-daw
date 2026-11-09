@@ -345,7 +345,12 @@ async function smoke(c) {
     (await c.attr(['aria-pressed', 'button', 'Select', 'Track', '3'])) === 'true',
     'key 3 selects track 3',
   );
-  check((await c.text(['.preset-editor .track-name'])) === 'Track 3', 'editor follows the track');
+  // textContent: the label is styled uppercase, which innerText would apply.
+  const editorText = async (part) =>
+    JSON.parse(
+      await c.eval([`document.querySelector('.preset-editor .${part}').textContent.trim()`]),
+    );
+  check((await editorText('kind')) === 'Track 3 preset', 'editor follows the track');
   await c.keydown(['KeyA']);
   check((await c.meter()) > 0.02, 'notes play on the newly selected track');
   await c.keyup(['KeyA']);
@@ -354,7 +359,7 @@ async function smoke(c) {
   const chain = async () =>
     JSON.parse(
       await c.eval([
-        "(() => { const p = chipDaw.session.selectedTrack.segments[0].preset; return [...p.sequencers, p.synth, ...p.effects].map(b => b.type + (b.bypassed ? '(off)' : '')).join(' '); })()",
+        "(() => { const p = chipDaw.session.selectedTrackPreset; return [...p.sequencers, p.synth, ...p.effects].map(b => b.type + (b.bypassed ? '(off)' : '')).join(' '); })()",
       ]),
     );
   await c.select(['Add', 'effect', '|', 'Delay']);
@@ -433,6 +438,58 @@ async function smoke(c) {
   const level = await c['meter-max'](['1000']);
   await c.press(['Space']);
   check(level > 0.02, `Space plays the recorded clip back (meter ${level.toFixed(3)})`);
+
+  // Clip presets: a recorded clip keeps its sound. The two clips on track 4 were recorded on
+  // track 3, so they share track 3's preset. Summary per preset: "name/wave/effects", for the
+  // track 3 preset, the track 4 preset, then each clip on track 4.
+  const presets = async () =>
+    JSON.parse(
+      await c.eval([
+        "(() => { const p = chipDaw.session.project; const d = id => { const x = p.presets.find(q => q.id === id); return `${x.name}/${x.synth.params.wave}/${x.effects.map(e => e.type).join('+')}`; }; return [d(p.tracks[2].presetId), d(p.tracks[3].presetId), ...p.tracks[3].clips.map(c => d(c.presetId))].join(' | '); })()",
+      ]),
+    );
+  const editorKind = () => editorText('kind');
+  await c.press(['3']);
+  check(
+    (await editorText('usage')).includes('2 clips'),
+    `the track preset says clips use it (${await editorText('usage')})`,
+  );
+  await c.select(['Add', 'effect', '|', 'Bitcrush']);
+  let ps = await presets();
+  check(
+    ps === 'Init 2/2/fx.bitcrush | Init/2/ | Init/2/ | Init/2/',
+    `editing a track preset that clips use makes a copy; the clips keep theirs (${ps})`,
+  );
+  check(
+    (await c.text(['.notice'])).includes('Track 3 now plays a copy'),
+    'a notice explains the copy',
+  );
+  await c['click-at'](['.timeline-canvas', '120', '220']); // first clip on track 4
+  check((await editorKind()) === 'Clip preset', 'selecting a clip shows its clip preset');
+  check(
+    (await editorText('usage')) === 'Used by 2 clips',
+    `the clip preset says how many clips use it (${await editorText('usage')})`,
+  );
+  await c.click(['button', 'Make', 'unique']);
+  await c.click(['radio', 'Noise']);
+  ps = await presets();
+  check(
+    ps === 'Init 2/2/fx.bitcrush | Init/2/ | Init 3/4/ | Init/2/',
+    `Make unique, then editing changes only that clip (${ps})`,
+  );
+  await c.click(['button', 'Use', 'track', 'preset']);
+  ps = await presets();
+  check(ps.endsWith('| Init/2/ | Init/2/ | Init/2/'), `Use track preset (${ps})`);
+  check(
+    (await c.attr(['disabled', 'button', 'Use', 'track', 'preset'])) !== null,
+    'Use track preset is disabled once the clip uses it',
+  );
+  await c.press(['Control+z']);
+  await c.click(['button', 'Load', 'to', 'track']);
+  ps = await presets();
+  check(ps.startsWith('Init 2/2/fx.bitcrush | Init 3/4/ | Init 3/4/'), `Load to track (${ps})`);
+  await c.click(['button', 'Show', 'track', 'preset']);
+  check((await editorKind()) === 'Track 4 preset', 'the back button shows the track preset');
   await c.screenshot(['3-arrangement']);
 
   // Piano roll: double-click an empty lane (track 6, bar 1) to create a clip, then double-click
@@ -532,7 +589,7 @@ async function smoke(c) {
 
   // Preset library (a fresh browser gets the starter presets) and WAV export.
   const trackPreset = async () =>
-    JSON.parse(await c.eval(['chipDaw.session.project.tracks[0].segments[0].preset.name']));
+    JSON.parse(await c.eval(['chipDaw.session.selectedTrackPreset.name']));
   await c.press(['1']);
   await c.click(['button', 'Open', 'Bass']);
   await c.click(['button', 'Triangle', 'bass']);

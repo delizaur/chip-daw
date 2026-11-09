@@ -6,6 +6,8 @@ export interface ScheduledNote {
   end: Tick;
   pitch: number;
   velocity: number;
+  /** The clip's preset: the chain the note plays on. */
+  presetId: string;
 }
 
 /**
@@ -24,6 +26,7 @@ export function scheduleNotes(clips: readonly Clip[]): ScheduledNote[] {
         end: Math.min(tick + note.durationTicks, clipEnd),
         pitch: note.pitch,
         velocity: note.velocity,
+        presetId: clip.presetId,
       });
     }
   }

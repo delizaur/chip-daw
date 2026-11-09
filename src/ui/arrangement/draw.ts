@@ -16,6 +16,8 @@ export interface ClipGhost {
 
 export interface TimelineScene {
   tracks: readonly Track[];
+  /** Preset id → name, to label clips with their preset. */
+  presetNames: ReadonlyMap<string, string>;
   meter: MeterEvent;
   view: TimelineView;
   width: number;
@@ -27,7 +29,14 @@ export interface TimelineScene {
   take: TakePreview | null;
   /** Clips being dragged: drawn at their new place, originals dimmed. */
   ghosts: ClipGhost[] | null;
+  /** Font family for labels. */
+  font: string;
 }
+
+/** Clips narrower than this get no preset label. */
+const LABEL_MIN_WIDTH = 40;
+/** Height of the preset label strip at the top of a clip. */
+const LABEL_HEIGHT = 13;
 
 /** A recording pass in progress, with notes mapped to track indices. */
 export interface TakePreview {
@@ -66,7 +75,23 @@ function drawClip(
   if (style === 'ghost') ctx.setLineDash([4, 3]);
   ctx.stroke();
 
-  // Note preview, scaled to the clip's pitch range.
+  // The clip preset's name, so you can see which clips share one.
+  const name = scene.presetNames.get(clip.presetId);
+  const labelled = !!name && w >= LABEL_MIN_WIDTH;
+  if (labelled) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 4, y, w - 8, LABEL_HEIGHT + 2);
+    ctx.clip();
+    ctx.globalAlpha = style === 'dimmed' ? 0.25 : 0.8;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `600 9px ${scene.font}`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, x + 5, y + 2 + LABEL_HEIGHT / 2);
+    ctx.restore();
+  }
+
+  // Note preview, scaled to the clip's pitch range (below the label, if there is one).
   const end = startTick + lengthTicks;
   const visible = clip.notes.filter((n) => {
     const at = notesStart + n.tick;
@@ -80,7 +105,8 @@ function drawClip(
       high = Math.max(high, n.pitch);
     }
     const span = Math.max(high - low, 8);
-    const inner = h - 10;
+    const top = labelled ? LABEL_HEIGHT + 3 : 5;
+    const inner = h - top - 5;
     ctx.fillStyle = '#ffffff';
     ctx.globalAlpha *= 0.85;
     ctx.beginPath();
@@ -89,7 +115,7 @@ function drawClip(
     for (const n of visible) {
       const nx = tickToX(scene.view, notesStart + n.tick);
       const nw = Math.max(1.5, n.durationTicks * scene.view.pixelsPerTick - 1);
-      const ny = y + 5 + inner - ((n.pitch - low + (span - (high - low)) / 2) / span) * inner;
+      const ny = y + top + inner - ((n.pitch - low + (span - (high - low)) / 2) / span) * inner;
       ctx.fillRect(nx, ny - 1, nw, 2.5);
     }
   }

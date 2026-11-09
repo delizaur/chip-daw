@@ -43,6 +43,7 @@ export class Engine {
   #playing = false;
   #position: Tick = 0;
   #recordArmed = false;
+  #overdub = false;
   #latencySeconds = 0;
   #take: Take | null = null;
   readonly #window: PlayWindow = { start: 0, end: 0, ticksPerSample: 0 };
@@ -88,12 +89,18 @@ export class Engine {
         this.#project = applyPatches(this.#project, message.patches);
         this.#sync();
         break;
-      case 'noteOn':
-        this.#tracksById.get(message.trackId)?.noteOn(message.pitch, message.velocity);
+      case 'noteOn': {
+        const track = this.#tracksById.get(message.trackId);
+        // Overdubbing: you hear the clip you're adding to (the merged clip keeps its preset).
+        const presetId =
+          message.presetId ??
+          (this.#take && this.#overdub ? track?.clipPresetAt(this.#position) : undefined);
+        track?.noteOn(message.pitch, message.velocity, presetId);
         if (message.record !== false) {
           this.#recordNoteOn(message.trackId, message.pitch, message.velocity);
         }
         break;
+      }
       case 'noteOff':
         this.#tracksById.get(message.trackId)?.noteOff(message.pitch);
         this.#recordNoteOff(message.trackId, message.pitch);
@@ -127,6 +134,9 @@ export class Engine {
         this.#recordArmed = message.armed;
         this.#updateTake();
         break;
+      case 'setOverdub':
+        this.#overdub = message.enabled;
+        break;
       case 'setMetronome':
         this.#metronome.enabled = message.enabled;
         break;
@@ -142,6 +152,7 @@ export class Engine {
     if (!project) return;
     this.#masterGain.target = volumeToGain(project.masterVolume);
     const anySolo = project.tracks.some((t) => t.solo);
+    const presets = new Map(project.presets.map((p) => [p.id, p]));
     const seen = new Set<string>();
     this.#tracks = project.tracks.map((track) => {
       let runtime = this.#tracksById.get(track.id);
@@ -149,7 +160,7 @@ export class Engine {
         runtime = new TrackRuntime(track.id, this.sampleRate);
         this.#tracksById.set(track.id, runtime);
       }
-      runtime.sync(track, !track.mute && (!anySolo || track.solo), this.#position);
+      runtime.sync(track, presets, !track.mute && (!anySolo || track.solo), this.#position);
       seen.add(track.id);
       return runtime;
     });

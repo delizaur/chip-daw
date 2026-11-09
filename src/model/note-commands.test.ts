@@ -18,7 +18,7 @@ const note = (id: string, tick: number, pitch = 60): Note => ({
 function setup(clipStart = 0) {
   const h = new History(createProject());
   const trackId = h.state.tracks[0]!.id;
-  const clip = createClip(clipStart, 4 * PPQ);
+  const clip = createClip(clipStart, 4 * PPQ, h.state.tracks[0]!.presetId);
   h.run(placeClips([{ trackId, clip }]));
   const address = { trackId, clipId: clip.id };
   const notes = () => h.state.tracks[0]!.clips[0]!.notes;

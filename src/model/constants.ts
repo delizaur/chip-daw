@@ -8,6 +8,6 @@ export const PPQ = 960;
 export const DEFAULT_TRACK_COUNT = 8;
 
 /** Version of the project file format written by this build. Bump it and add a migration on change. */
-export const PROJECT_FORMAT_VERSION = 1;
+export const PROJECT_FORMAT_VERSION = 2;
 
 export const DEFAULT_BPM = 120;

@@ -3,6 +3,12 @@ import { MidiInputs, midiSupported, type MidiDevice, type MidiSelection } from '
 import { describeMidiMessage } from '../../audio/midi-message';
 import { cloneClip, createClip } from '../../model/clips';
 import {
+  canMakeUnique,
+  loadClipPresetToTrack,
+  makeClipsUnique,
+  useTrackPreset,
+} from '../../model/clip-preset-commands';
+import {
   deleteClips,
   placeClips,
   recordTake,
@@ -28,8 +34,9 @@ import {
   projectNameFromFile,
   serializeProject,
 } from '../../model/project-file';
+import { findPresetById, presetUsage, type PresetTarget } from '../../model/presets';
 import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
-import type { Clip, Note, Project, Tick, Track } from '../../model/types';
+import type { Clip, Note, Preset, Project, Tick, Track } from '../../model/types';
 import { Autosaver, loadAutosave } from '../../persistence/autosave';
 import {
   chooseSaveTarget,
@@ -54,6 +61,37 @@ export interface LiveTake {
   startTick: Tick;
   notes: (RecordedNote & { held: boolean })[];
 }
+
+/**
+ * What the preset editor shows: the selected track's preset, or the clip preset of the clips
+ * selected on that track ('mixed' when they use different presets).
+ */
+export type PresetView =
+  | {
+      kind: 'track';
+      track: Track;
+      trackIndex: number;
+      preset: Preset;
+      target: PresetTarget;
+      /** Clips that use this preset too (editing makes the track switch to a copy). */
+      clipCount: number;
+    }
+  | {
+      kind: 'clip';
+      track: Track;
+      trackIndex: number;
+      preset: Preset;
+      target: PresetTarget;
+      /** The selected clips on this track. */
+      clipIds: string[];
+      /** Every clip that uses this preset (editing changes all of them). */
+      clipCount: number;
+      /** Whether it's also the track preset (editing changes that too). */
+      isTrackPreset: boolean;
+      /** Whether Make unique would do anything. */
+      canMakeUnique: boolean;
+    }
+  | { kind: 'mixed'; track: Track; trackIndex: number; clipIds: string[] };
 
 export interface Notice {
   kind: 'info' | 'error';
@@ -140,7 +178,8 @@ class Session {
 
   // Clip selection and clipboard (not undoable).
   selectedClipIds = $state.raw<ReadonlySet<string>>(new Set());
-  #clipboard: { trackOffset: number; clip: Clip }[] = [];
+  /** Copied clips, each with its preset (in case the original is gone when pasting). */
+  #clipboard: { trackOffset: number; clip: Clip; preset: Preset | undefined }[] = [];
 
   // Bottom panel and piano roll.
   bottomTab = $state<'preset' | 'pianoRoll'>('preset');
@@ -196,10 +235,66 @@ class Session {
     return this.project.tracks[this.selectedTrackIndex];
   }
 
+  /** The selected track's track preset. */
+  get selectedTrackPreset(): Preset | undefined {
+    const track = this.selectedTrack;
+    return track ? findPresetById(this.project, track.presetId) : undefined;
+  }
+
+  /** What the preset editor shows (see PresetView). */
+  get presetView(): PresetView | null {
+    const project = this.project;
+    const track = this.selectedTrack;
+    if (!track) return null;
+    const trackIndex = this.selectedTrackIndex;
+    const clips = track.clips.filter((c) => this.selectedClipIds.has(c.id));
+    if (clips.length === 0) {
+      const preset = findPresetById(project, track.presetId);
+      if (!preset) return null;
+      const clipCount = presetUsage(project, preset.id).clipIds.length;
+      return { kind: 'track', track, trackIndex, preset, target: { trackId: track.id }, clipCount };
+    }
+    const clipIds = clips.map((c) => c.id);
+    const presetIds = new Set(clips.map((c) => c.presetId));
+    const preset = presetIds.size === 1 ? findPresetById(project, clips[0]!.presetId) : undefined;
+    if (!preset) return { kind: 'mixed', track, trackIndex, clipIds };
+    return {
+      kind: 'clip',
+      track,
+      trackIndex,
+      preset,
+      target: { presetId: preset.id },
+      clipIds,
+      clipCount: presetUsage(project, preset.id).clipIds.length,
+      isTrackPreset: track.presetId === preset.id,
+      canMakeUnique: canMakeUnique(project, clipIds),
+    };
+  }
+
   // --- Project editing -------------------------------------------------------------------
 
   run(command: ProjectCommand): void {
     this.#history.run(command);
+  }
+
+  /**
+   * Runs a preset edit (box param, chain change, rename). If it made a track switch to a copy
+   * of its preset (copy on write, because clips use it), says so: the name changes under you.
+   */
+  runPresetEdit(command: ProjectCommand): void {
+    const before = new Map(this.project.tracks.map((t) => [t.id, t.presetId]));
+    this.run(command);
+    for (const track of this.project.tracks) {
+      const old = before.get(track.id);
+      if (!old || old === track.presetId) continue;
+      const original = findPresetById(this.project, old);
+      const copy = findPresetById(this.project, track.presetId);
+      if (original && copy) {
+        this.showNotice(
+          `${track.name} now plays a copy, "${copy.name}". Recorded clips keep "${original.name}".`,
+        );
+      }
+    }
   }
 
   /** Groups the following `run` calls into one undo step, e.g. for a knob drag. */
@@ -273,10 +368,13 @@ class Session {
     this.keyboardVelocity = shiftVelocity(this.keyboardVelocity, delta);
   }
 
-  /** Auditions a note briefly on a track (piano roll clicks). Not recorded. */
-  previewNote(trackId: string, pitch: number, velocity = 100): void {
+  /**
+   * Auditions a note briefly on a track (piano roll clicks), through a clip preset when given.
+   * Not recorded.
+   */
+  previewNote(trackId: string, pitch: number, velocity = 100, presetId?: string): void {
     void this.startAudio();
-    this.#engine.send({ type: 'noteOn', trackId, pitch, velocity, record: false });
+    this.#engine.send({ type: 'noteOn', trackId, pitch, velocity, record: false, presetId });
     setTimeout(() => this.#engine.send({ type: 'noteOff', trackId, pitch }), PREVIEW_MS);
   }
 
@@ -324,6 +422,7 @@ class Session {
 
   toggleOverdub(): void {
     this.overdub = !this.overdub;
+    this.#engine.send({ type: 'setOverdub', enabled: this.overdub });
   }
 
   toggleMetronome(): void {
@@ -367,6 +466,7 @@ class Session {
     this.#clipboard = selected.map(({ trackIndex, clip }) => ({
       trackOffset: trackIndex - firstTrack,
       clip: { ...clip, startTick: clip.startTick - firstTick },
+      preset: findPresetById(this.project, clip.presetId),
     }));
   }
 
@@ -374,9 +474,10 @@ class Session {
   pasteClips(): void {
     if (this.#clipboard.length === 0) return;
     const at = this.position;
-    const placements = this.#clipboard.flatMap(({ trackOffset, clip }) => {
+    const placements = this.#clipboard.flatMap(({ trackOffset, clip, preset }) => {
       const track = this.project.tracks[this.selectedTrackIndex + trackOffset];
-      return track ? [{ trackId: track.id, clip: cloneClip(clip, at + clip.startTick) }] : [];
+      if (!track) return [];
+      return [{ trackId: track.id, clip: cloneClip(clip, at + clip.startTick), preset }];
     });
     this.#placeAndSelect(placements, 'Paste');
   }
@@ -394,12 +495,44 @@ class Session {
     this.#placeAndSelect(placements, 'Duplicate');
   }
 
-  /** Creates an empty one-bar clip (for drawing notes in the piano roll). */
+  /** Creates an empty one-bar clip with the track preset (for drawing notes in the piano roll). */
   createEmptyClip(trackIndex: number, startTick: Tick): void {
     const track = this.project.tracks[trackIndex];
     if (!track) return;
     const bar = ticksPerBar(this.project.tempoMap.meters[0]!);
-    this.#placeAndSelect([{ trackId: track.id, clip: createClip(startTick, bar) }], 'Add clip');
+    const clip = createClip(startTick, bar, track.presetId);
+    this.#placeAndSelect([{ trackId: track.id, clip }], 'Add clip');
+  }
+
+  // --- Clip presets -----------------------------------------------------------------------
+
+  /** Clips selected on the selected track (the ones the clip preset buttons act on). */
+  #presetClipIds(): string[] {
+    const view = this.presetView;
+    return view && view.kind !== 'track' ? view.clipIds : [];
+  }
+
+  makeSelectedClipsUnique(): void {
+    const ids = this.#presetClipIds();
+    if (ids.length > 0 && canMakeUnique(this.project, ids)) this.run(makeClipsUnique(ids));
+  }
+
+  useTrackPresetForSelectedClips(): void {
+    const ids = this.#presetClipIds();
+    if (ids.length > 0) this.run(useTrackPreset(ids));
+  }
+
+  /** Makes the selected clips' preset the track preset (when they share one). */
+  loadSelectedClipPresetToTrack(): void {
+    const view = this.presetView;
+    if (view?.kind === 'clip' && !view.isTrackPreset) {
+      this.run(loadClipPresetToTrack(view.clipIds[0]!));
+    }
+  }
+
+  /** Shows the track preset in the editor (deselects the clips). */
+  showTrackPreset(): void {
+    this.selectedClipIds = new Set();
   }
 
   #placeAndSelect(placements: ClipPlacement[], label: string): void {
@@ -453,7 +586,8 @@ class Session {
     }));
     this.run(updateNotes(this.editingClip!, changes, semitones ? 'Transpose' : 'Move notes'));
     if (semitones && notes.length === 1) {
-      this.previewNote(editing.track.id, Math.min(127, Math.max(0, notes[0]!.pitch + semitones)));
+      const pitch = Math.min(127, Math.max(0, notes[0]!.pitch + semitones));
+      this.previewNote(editing.track.id, pitch, 100, editing.clip.presetId);
     }
     return true;
   }
@@ -697,6 +831,7 @@ class Session {
         { type: 'loadProject', project: this.#history.state },
         { type: 'setMetronome', enabled: this.metronome },
         { type: 'setRecord', armed: this.recordArmed },
+        { type: 'setOverdub', enabled: this.overdub },
         { type: 'seek', tick: this.position },
       ]);
       this.audioStatus = 'running';

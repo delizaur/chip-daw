@@ -1,13 +1,68 @@
 import { PROJECT_FORMAT_VERSION } from './constants';
+import { createId } from './ids';
 import type { Project } from './types';
 
-type Migration = (project: Record<string, unknown>) => Record<string, unknown>;
+type Json = Record<string, unknown>;
+type Migration = (project: Json) => Json;
+
+const isObject = (v: unknown): v is Json =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Format 1 → 2 (Phase 3C, clip presets): presets move out of each track's `segments` into one
+ * `presets` list, and tracks and clips point at them by id. A track's preset becomes its first
+ * segment's; each clip gets the preset of the segment it starts in (in practice there was only
+ * ever one segment per track, so every clip shares its track's preset and sounds as before).
+ * Malformed parts are passed through for validation to report.
+ */
+function presetsByReference(project: Json): Json {
+  const presets: Json[] = [];
+  const seen = new Set<string>();
+  if (!Array.isArray(project.tracks)) return { ...project, presets };
+  const tracks = project.tracks.map((track: unknown) => {
+    if (!isObject(track)) return track;
+    const segments = (Array.isArray(track.segments) ? track.segments : [])
+      .filter((s): s is Json => isObject(s) && isObject(s.preset))
+      .map((s) => ({
+        startTick: typeof s.startTick === 'number' ? s.startTick : 0,
+        preset: s.preset as Json,
+      }))
+      .sort((a, b) => a.startTick - b.startTick);
+    const ids = segments.map(({ preset }) => {
+      let id = typeof preset.id === 'string' ? preset.id : createId();
+      if (seen.has(id)) id = createId();
+      seen.add(id);
+      presets.push({ ...preset, id });
+      return id;
+    });
+    const presetAt = (tick: unknown) => {
+      let id = ids[0];
+      segments.forEach((s, i) => {
+        if (typeof tick === 'number' && s.startTick <= tick) id = ids[i];
+      });
+      return id;
+    };
+    const { segments: _segments, ...rest } = track;
+    return {
+      ...rest,
+      presetId: ids[0],
+      clips: Array.isArray(track.clips)
+        ? track.clips.map((clip: unknown) =>
+            isObject(clip) ? { ...clip, presetId: presetAt(clip.startTick) } : clip,
+          )
+        : track.clips,
+    };
+  });
+  return { ...project, presets, tracks };
+}
 
 /**
  * `migrations[n]` upgrades a project from format version n to n + 1.
  * When bumping PROJECT_FORMAT_VERSION, add an entry here and a test with an old fixture.
  */
-const migrations: Record<number, Migration> = {};
+const migrations: Record<number, Migration> = {
+  1: presetsByReference,
+};
 
 export class ProjectFormatError extends Error {}
 

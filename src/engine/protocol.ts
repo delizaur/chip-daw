@@ -8,9 +8,17 @@ export type UiToEngine =
   | { type: 'applyPatches'; patches: Patch[] }
   /**
    * Live input (computer keyboard, MIDI). Velocity is 1..127. `record: false` plays without
-   * recording (piano roll auditions).
+   * recording (piano roll auditions). `presetId` plays it through that clip preset's chain on
+   * the track (auditions of a clip) instead of the track preset.
    */
-  | { type: 'noteOn'; trackId: string; pitch: number; velocity: number; record?: boolean }
+  | {
+      type: 'noteOn';
+      trackId: string;
+      pitch: number;
+      velocity: number;
+      record?: boolean;
+      presetId?: string;
+    }
   | { type: 'noteOff'; trackId: string; pitch: number }
   /** Releases every note on every track (e.g. when the window loses focus). */
   | { type: 'allNotesOff' }
@@ -20,6 +28,8 @@ export type UiToEngine =
   | { type: 'seek'; tick: Tick }
   /** Record arm: while armed and playing, live notes are captured into a take. */
   | { type: 'setRecord'; armed: boolean }
+  /** Overdub mode: while recording, live notes play through the clip under the playhead. */
+  | { type: 'setOverdub'; enabled: boolean }
   | { type: 'setMetronome'; enabled: boolean }
   /** Output latency in seconds, so recorded notes line up with what the player heard. */
   | { type: 'setLatency'; seconds: number };
@@ -56,5 +66,6 @@ export const QUEUED_MESSAGE_TYPES: ReadonlySet<UiToEngine['type']> = new Set([
   'pause',
   'seek',
   'setRecord',
+  'setOverdub',
   'setMetronome',
 ]);

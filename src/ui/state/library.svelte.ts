@@ -1,4 +1,4 @@
-import { loadPreset } from '../../model/chain-commands';
+import { loadTrackPreset } from '../../model/chain-commands';
 import { factoryLibrary } from '../../model/factory-presets';
 import {
   addFolder,
@@ -122,22 +122,22 @@ class LibraryStore {
     this.select({ kind: 'preset', id: entry.preset.id });
   }
 
-  /** Saves a copy of the selected track's preset into the library. */
-  saveTrackPreset(): void {
-    const track = session.selectedTrack;
-    const preset = track?.segments[0]?.preset;
-    if (!track || !preset) return;
+  /** Saves a copy of a project preset (by default the selected track's) into the library. */
+  saveToLibrary(preset: Preset | undefined = session.selectedTrackPreset): void {
+    if (!preset) return;
     this.#add(preset);
     session.showNotice(`Saved "${preset.name}" to the library`);
   }
 
-  /** Loads a copy of a library preset onto the selected track (undoable). */
+  /**
+   * Loads a copy of a library preset as the selected track's preset (undoable). Recorded clips
+   * keep theirs.
+   */
   loadToTrack(presetId: string): void {
     const entry = findPreset(this.library, presetId);
     const track = session.selectedTrack;
-    const segment = track?.segments[0];
-    if (!entry || !track || !segment) return;
-    session.run(loadPreset({ trackId: track.id, segmentId: segment.id }, instantiatePreset(entry)));
+    if (!entry || !track) return;
+    session.run(loadTrackPreset(track.id, instantiatePreset(entry)));
   }
 
   renamePreset(presetId: string, name: string): void {
@@ -178,11 +178,13 @@ class LibraryStore {
     }
   }
 
-  /** Exports a library preset, or (with no id) the selected track's preset. */
-  async exportPreset(presetId?: string): Promise<void> {
-    const preset = presetId
-      ? findPreset(this.library, presetId)?.preset
-      : session.selectedTrack?.segments[0]?.preset;
+  /** Exports a library preset as a .chippreset file. */
+  exportLibraryPreset(presetId: string): Promise<void> {
+    return this.exportPreset(findPreset(this.library, presetId)?.preset);
+  }
+
+  /** Exports a preset (e.g. a track or clip preset) as a .chippreset file. */
+  async exportPreset(preset: Preset | undefined): Promise<void> {
     if (!preset) return;
     try {
       const name = await saveFile(serializePresetFile(preset), presetFileName(preset), PRESET_FILE);

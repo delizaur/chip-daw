@@ -66,8 +66,8 @@ describe('Engine', () => {
   it('applies synth param changes from the history, including undo', () => {
     const { history, noteOn, render } = setup();
     const track = history.state.tracks[0]!;
-    const segment = track.segments[0]!;
-    const address = { trackId: track.id, segmentId: segment.id, boxId: segment.preset.synth.id };
+    const synthId = history.state.presets.find((p) => p.id === track.presetId)!.synth.id;
+    const address = { target: { trackId: track.id }, boxId: synthId };
 
     history.run(setBoxParam(address, 'transpose', 12));
     noteOn(0, 57);

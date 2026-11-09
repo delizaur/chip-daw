@@ -27,8 +27,8 @@ function setup() {
 describe('clip commands', () => {
   it('places, moves (across tracks) and deletes clips, all undoable', () => {
     const { h, id, clips } = setup();
-    const a = createClip(0, BAR);
-    const b = createClip(2 * BAR, BAR);
+    const a = createClip(0, BAR, h.state.tracks[0]!.presetId);
+    const b = createClip(2 * BAR, BAR, h.state.tracks[0]!.presetId);
     h.run(
       placeClips([
         { trackId: id(0), clip: a },
@@ -55,7 +55,7 @@ describe('clip commands', () => {
 
   it('clamps moves to the song start and the track list', () => {
     const { h, id, clips } = setup();
-    const a = createClip(BAR, BAR);
+    const a = createClip(BAR, BAR, h.state.tracks[0]!.presetId);
     h.run(placeClips([{ trackId: id(6), clip: a }]));
     h.run(moveClips([a.id], -10 * BAR, 5));
     expect(clips(7)).toEqual([[0, BAR]]);
@@ -63,8 +63,8 @@ describe('clip commands', () => {
 
   it('moved clips trim the clips they land on', () => {
     const { h, id, clips } = setup();
-    const a = createClip(0, 2 * BAR);
-    const b = createClip(4 * BAR, BAR);
+    const a = createClip(0, 2 * BAR, h.state.tracks[0]!.presetId);
+    const b = createClip(4 * BAR, BAR, h.state.tracks[0]!.presetId);
     h.run(
       placeClips([
         { trackId: id(0), clip: a },
@@ -80,7 +80,7 @@ describe('clip commands', () => {
 
   it('resizes from either edge, keeping notes in place', () => {
     const { h, id } = setup();
-    const a = createClip(BAR, 2 * BAR, [
+    const a = createClip(BAR, 2 * BAR, h.state.tracks[0]!.presetId, [
       { id: 'n', tick: PPQ, durationTicks: PPQ, pitch: 60, velocity: 100 },
     ]);
     h.run(placeClips([{ trackId: id(0), clip: a }]));

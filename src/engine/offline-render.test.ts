@@ -12,21 +12,20 @@ import { encodeWav } from './wav';
 
 function song(withDelay = false) {
   const h = new History(createProject());
-  const track = h.state.tracks[0]!;
+  const trackId = h.state.tracks[0]!.id;
+  // Before the clip exists: the clip records with the track preset as it is then.
+  if (withDelay) h.run(addBox({ trackId }, createBox('fx.delay')));
   // Two beats of one note (1 s at 120 BPM).
   h.run(
     placeClips([
       {
-        trackId: track.id,
-        clip: createClip(0, 2 * PPQ, [
+        trackId,
+        clip: createClip(0, 2 * PPQ, h.state.tracks[0]!.presetId, [
           { id: 'n', tick: 0, durationTicks: PPQ, pitch: 60, velocity: 100 },
         ]),
       },
     ]),
   );
-  if (withDelay) {
-    h.run(addBox({ trackId: track.id, segmentId: track.segments[0]!.id }, createBox('fx.delay')));
-  }
   return h;
 }
 

@@ -9,8 +9,29 @@
 * 8 tracks
 * The user can quickly switch to a track by pressing the 1-8 keys.
 * Notes are recorded as midi, not audio (for now)
-* Each track as a *preset* assigned to it. Midi notes + preset = sound.
-* Normally, one track = one preset, but if the user runs out of tracks, they will be allowed to change the preset assigned to a track mid-song with a construct similar to a "wall", where on the same track, presets can be different on its left and right sides.
+* Each track has a *preset* assigned to it: the one you play live with and that new recordings use. Midi notes + preset = sound.
+* **Recorded clips keep their sound** (borrowed from the OP-1's tape): recording copies the track preset into the clip. Changing the track preset afterwards only affects what you record next, never what you already recorded. Unlike the OP-1, clips are midi, so a clip's preset can still be edited later.
+* Because every clip carries its own preset, one track can play different presets over a song (no need for "walls").
+
+## Terminology
+
+There is one word for a chain of boxes: **preset**. What tells presets apart is where they live:
+
+| Term | What it is | Where you see it |
+|---|---|---|
+| **Preset** | A chain of boxes: sequencers → synth → effects | Everywhere |
+| **Library preset** | A preset saved in your library, outside any project | Left sidebar |
+| **Track preset** | The preset you play live with, and that new recordings use | Right sidebar; the preset editor when no clip is selected |
+| **Clip preset** | The preset a clip plays back with, set when it's recorded | The preset editor when a clip is selected |
+
+* Clip presets can be **shared**: clips recorded with the same, unchanged track preset share one preset, so editing it changes all of them ("used by 3 clips"). The track preset can share a preset with clips too.
+* Editing the track preset never changes recorded clips: if clips use it, the track switches to a copy first (named e.g. "Bass 2"), and the clips keep the original.
+* Editing a clip preset changes every clip that shares it, and the track preset too if it shares it (so you can tweak what you just recorded and keep recording with the tweak).
+* With a clip selected, three buttons move presets between clips and the track:
+  * **Make unique**: the selected clips get their own copy of their preset, so editing it doesn't affect other clips. Nothing sounds different until you edit it.
+  * **Use track preset**: the selected clips switch to the track preset.
+  * **Load to track**: the track preset switches to this clip's preset, to record more with an earlier sound (like loading a library preset).
+* "Sound" keeps its everyday meaning: what you hear.
 
 ## Presets
 
@@ -50,7 +71,7 @@ Sequencers, synths and effects are represented as "boxes", that can be freely sw
   * Every track also has a mute and solo button, and a volume control.
 * #### Preset editing (bottom of the screen)
 
-  * When editing a preset (from the left preset list or from a track), the bottom of the screen acts as the preset editing area. Like in ableton Live, the preset "boxes" are shown from left to right, with every parameter visible and editable.
+  * When editing a preset (from the left preset list, a track or a clip), the bottom of the screen acts as the preset editing area. Its header always says which preset it is editing (track or clip preset) and how many clips use it. Like in ableton Live, the preset "boxes" are shown from left to right, with every parameter visible and editable.
   * Sequencers, synths and effects can be added or replaced from a list.
   * Modifying a parameter while recording automates it.
 

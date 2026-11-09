@@ -17,9 +17,9 @@ const meter = { tick: 0, numerator: 4, denominator: 4, subdivision: 16 };
 const view: TimelineView = { pixelsPerTick: 32 / PPQ, scrollTick: 0 }; // 32 px per beat
 
 function tracks() {
-  const a = createTrack(0);
-  a.clips = [createClip(PPQ, 4 * PPQ)]; // x 32..160
-  return [a, createTrack(1)];
+  const a = createTrack(0, 'p');
+  a.clips = [createClip(PPQ, 4 * PPQ, 'p')]; // x 32..160
+  return [a, createTrack(1, 'p')];
 }
 
 describe('timeline geometry', () => {

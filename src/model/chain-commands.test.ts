@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createBox } from './boxes/registry';
 import {
   addBox,
-  loadPreset,
+  loadTrackPreset,
   moveBox,
   removeBox,
-  renameTrackPreset,
+  renamePreset,
   replaceBox,
   setBoxBypassed,
 } from './chain-commands';
@@ -16,8 +16,8 @@ import { copyPreset } from './library';
 function setup() {
   const h = new History(createProject());
   const track = h.state.tracks[0]!;
-  const address = { trackId: track.id, segmentId: track.segments[0]!.id };
-  const preset = () => h.state.tracks[0]!.segments[0]!.preset;
+  const address = { trackId: track.id };
+  const preset = () => h.state.presets.find((p) => p.id === h.state.tracks[0]!.presetId)!;
   const effects = () => preset().effects.map((b) => b.type);
   return { h, address, preset, effects };
 }
@@ -88,12 +88,13 @@ describe('preset commands', () => {
     const { h, address, preset } = setup();
     const before = preset();
     const incoming = copyPreset(createPreset('Bass'));
-    h.run(loadPreset(address, incoming));
+    h.run(loadTrackPreset(address.trackId, incoming));
     expect(preset()).toEqual(incoming);
+    expect(h.state.presets.some((p) => p.id === before.id)).toBe(false); // unused: removed
     expect(h.undoLabel).toBe('Load Bass');
-    h.run(renameTrackPreset(address, '  Deep bass '));
+    h.run(renamePreset(address, '  Deep bass '));
     expect(preset().name).toBe('Deep bass');
-    h.run(renameTrackPreset(address, ''));
+    h.run(renamePreset(address, ''));
     expect(preset().name).toBe('Deep bass');
     h.undo();
     h.undo();

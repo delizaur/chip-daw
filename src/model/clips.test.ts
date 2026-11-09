@@ -12,8 +12,8 @@ const note = (tick: number, pitch = 60, durationTicks = 100): Note => ({
 });
 
 function trackWith(...clips: [number, number, Note[]?][]): Track {
-  const track = createTrack(0);
-  track.clips = clips.map(([start, length, notes]) => createClip(start, length, notes ?? []));
+  const track = createTrack(0, 'p');
+  track.clips = clips.map(([start, length, notes]) => createClip(start, length, 'p', notes ?? []));
   return track;
 }
 
@@ -41,11 +41,12 @@ describe('clip operations', () => {
     expect(track.clips[1]!.id).not.toBe(originalId);
     expect(track.clips[0]!.notes.map((n) => n.tick)).toEqual([100]);
     expect(track.clips[1]!.notes.map((n) => n.tick)).toEqual([500]); // 3500 - 3000
+    expect(track.clips.map((c) => c.presetId)).toEqual(['p', 'p']); // both halves keep the preset
   });
 
   it('placeClip trims what it overlaps and keeps clips sorted', () => {
     const track = trackWith([0, 2000], [3000, 1000]);
-    placeClip(track, createClip(1500, 2000));
+    placeClip(track, createClip(1500, 2000, 'p'));
     expect(spans(track)).toEqual([
       [0, 1500],
       [1500, 3500],
@@ -54,7 +55,7 @@ describe('clip operations', () => {
   });
 
   it('setClipStart keeps notes in place in the song and hides the trimmed ones', () => {
-    const clip = createClip(1000, 2000, [note(0), note(500)]);
+    const clip = createClip(1000, 2000, 'p', [note(0), note(500)]);
     setClipStart(clip, 1200);
     expect(clip.startTick).toBe(1200);
     expect(clip.lengthTicks).toBe(1800);
@@ -62,10 +63,11 @@ describe('clip operations', () => {
   });
 
   it('cloneClip copies deeply with fresh ids', () => {
-    const clip = createClip(0, 960, [note(0)]);
+    const clip = createClip(0, 960, 'p', [note(0)]);
     const copy = cloneClip(clip, 1920);
     expect(copy.id).not.toBe(clip.id);
     expect(copy.startTick).toBe(1920);
+    expect(copy.presetId).toBe('p'); // shares the preset
     expect(copy.notes[0]!.id).not.toBe(clip.notes[0]!.id);
     copy.notes[0]!.pitch = 72;
     expect(clip.notes[0]!.pitch).toBe(60);

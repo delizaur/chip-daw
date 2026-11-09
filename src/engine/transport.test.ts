@@ -35,7 +35,11 @@ const onset = (buffer: Float32Array, threshold = 0.01) =>
 describe('transport', () => {
   it('plays clip notes at their exact sample (120 BPM: a beat is 0.5 s)', () => {
     const { engine, history, trackId, render } = setup();
-    history.run(placeClips([{ trackId, clip: createClip(0, 4 * PPQ, [note(PPQ)]) }]));
+    history.run(
+      placeClips([
+        { trackId, clip: createClip(0, 4 * PPQ, history.state.tracks[0]!.presetId, [note(PPQ)]) },
+      ]),
+    );
     engine.handle({ type: 'play' });
     const out = render(1);
     expect(onset(out)).toBeGreaterThanOrEqual(SAMPLE_RATE / 2);
@@ -44,7 +48,14 @@ describe('transport', () => {
 
   it('ends notes after their duration', () => {
     const { engine, history, trackId, render } = setup();
-    history.run(placeClips([{ trackId, clip: createClip(0, 8 * PPQ, [note(0, PPQ / 2)]) }]));
+    history.run(
+      placeClips([
+        {
+          trackId,
+          clip: createClip(0, 8 * PPQ, history.state.tracks[0]!.presetId, [note(0, PPQ / 2)]),
+        },
+      ]),
+    );
     engine.handle({ type: 'play' });
     const out = render(1.5);
     expect(peak(out.subarray(0, SAMPLE_RATE / 4))).toBeGreaterThan(0.05);
@@ -54,7 +65,11 @@ describe('transport', () => {
   it('follows the tempo', () => {
     const { engine, history, trackId, render } = setup();
     history.run(setTempo(60)); // a beat is now 1 s
-    history.run(placeClips([{ trackId, clip: createClip(0, 4 * PPQ, [note(PPQ)]) }]));
+    history.run(
+      placeClips([
+        { trackId, clip: createClip(0, 4 * PPQ, history.state.tracks[0]!.presetId, [note(PPQ)]) },
+      ]),
+    );
     engine.handle({ type: 'play' });
     const at = onset(render(1.5));
     expect(at).toBeGreaterThanOrEqual(SAMPLE_RATE);
@@ -77,7 +92,15 @@ describe('transport', () => {
   it('seeks, skipping notes that started before the new position', () => {
     const { engine, history, trackId, render } = setup();
     history.run(
-      placeClips([{ trackId, clip: createClip(0, 8 * PPQ, [note(0, 2 * PPQ), note(4 * PPQ)]) }]),
+      placeClips([
+        {
+          trackId,
+          clip: createClip(0, 8 * PPQ, history.state.tracks[0]!.presetId, [
+            note(0, 2 * PPQ),
+            note(4 * PPQ),
+          ]),
+        },
+      ]),
     );
     engine.handle({ type: 'seek', tick: PPQ });
     engine.handle({ type: 'play' });
@@ -88,7 +111,14 @@ describe('transport', () => {
 
   it('stops clip notes on pause', () => {
     const { engine, history, trackId, render } = setup();
-    history.run(placeClips([{ trackId, clip: createClip(0, 16 * PPQ, [note(0, 16 * PPQ)]) }]));
+    history.run(
+      placeClips([
+        {
+          trackId,
+          clip: createClip(0, 16 * PPQ, history.state.tracks[0]!.presetId, [note(0, 16 * PPQ)]),
+        },
+      ]),
+    );
     engine.handle({ type: 'play' });
     render(0.2);
     engine.handle({ type: 'pause' });
@@ -100,7 +130,11 @@ describe('transport', () => {
     const { engine, history, trackId, render } = setup();
     engine.handle({ type: 'play' });
     const rendered = render(0.25).length; // rounded up to whole blocks
-    history.run(placeClips([{ trackId, clip: createClip(0, 4 * PPQ, [note(PPQ)]) }]));
+    history.run(
+      placeClips([
+        { trackId, clip: createClip(0, 4 * PPQ, history.state.tracks[0]!.presetId, [note(PPQ)]) },
+      ]),
+    );
     const at = onset(render(0.5));
     const expected = SAMPLE_RATE / 2 - rendered; // the note is at 0.5 s in song time
     expect(at).toBeGreaterThanOrEqual(expected);

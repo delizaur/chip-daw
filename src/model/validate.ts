@@ -79,6 +79,17 @@ export function validateProject(value: unknown): Project {
     }
   });
 
+  const presetIds = new Set<string>();
+  requireArray(value.presets, 'presets').forEach((preset, p) => {
+    const { id } = checkPreset(preset, `presets[${p}]`);
+    if (presetIds.has(id)) fail(`presets[${p}].id`, 'unique');
+    presetIds.add(id);
+  });
+  const requirePresetRef = (ref: unknown, path: string) => {
+    requireString(ref, path);
+    if (!presetIds.has(ref as string)) fail(path, 'the id of a preset in the project');
+  };
+
   const tracks = requireArray(value.tracks, 'tracks');
   if (tracks.length === 0) fail('tracks', 'non-empty');
   tracks.forEach((track, t) => {
@@ -87,20 +98,14 @@ export function validateProject(value: unknown): Project {
     requireString(track.id, `${path}.id`);
     requireString(track.name, `${path}.name`);
     requireNumber(track.volume, `${path}.volume`);
-    const segments = requireArray(track.segments, `${path}.segments`);
-    if (segments.length === 0) fail(`${path}.segments`, 'non-empty');
-    segments.forEach((segment, s) => {
-      const sp = `${path}.segments[${s}]`;
-      if (!isObject(segment) || !isObject(segment.preset)) fail(sp, 'a preset segment');
-      requireNumber(segment.startTick, `${sp}.startTick`);
-      checkPreset(segment.preset, `${sp}.preset`);
-    });
+    requirePresetRef(track.presetId, `${path}.presetId`);
     requireArray(track.clips, `${path}.clips`).forEach((clip, c) => {
       const cp = `${path}.clips[${c}]`;
       if (!isObject(clip)) fail(cp, 'a clip');
       requireString(clip.id, `${cp}.id`);
       requireNumber(clip.startTick, `${cp}.startTick`);
       requireNumber(clip.lengthTicks, `${cp}.lengthTicks`);
+      requirePresetRef(clip.presetId, `${cp}.presetId`);
       requireArray(clip.automation, `${cp}.automation`);
       requireArray(clip.notes, `${cp}.notes`).forEach((note, n) => {
         const np = `${cp}.notes[${n}]`;

@@ -17,7 +17,9 @@
           <span class="badge">{i + 1}</span>
           <span class="text">
             <span class="name">{track.name}</span>
-            <span class="preset">{track.segments[0]?.preset.name ?? '—'}</span>
+            <span class="preset"
+              >{session.project.presets.find((p) => p.id === track.presetId)?.name ?? '—'}</span
+            >
           </span>
         </button>
         <div class="controls">

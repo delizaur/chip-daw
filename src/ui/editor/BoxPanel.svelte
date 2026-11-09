@@ -6,13 +6,8 @@
 -->
 <script lang="ts">
   import { setBoxParam } from '../../model/commands';
-  import {
-    moveBox,
-    removeBox,
-    replaceBox,
-    setBoxBypassed,
-    type SegmentAddress,
-  } from '../../model/chain-commands';
+  import { moveBox, removeBox, replaceBox, setBoxBypassed } from '../../model/chain-commands';
+  import type { PresetTarget } from '../../model/presets';
   import { boxDescriptorsOfKind, getBoxDescriptor, paramValue } from '../../model/boxes/registry';
   import type { ParamDescriptor } from '../../model/boxes/types';
   import type { BoxInstance } from '../../model/types';
@@ -23,13 +18,14 @@
 
   interface Props {
     box: BoxInstance;
-    segment: SegmentAddress;
+    /** The preset the box is in: the track preset (copy on write) or a clip preset. */
+    target: PresetTarget;
     /** Position within its list (sequencers or effects) and the list's length; synth: 0 of 1. */
     index: number;
     count: number;
   }
 
-  let { box, segment, index, count }: Props = $props();
+  let { box, target, index, count }: Props = $props();
 
   /** Knob colors cycle like the OP-1's four encoders. */
   const KNOB_COLORS = ['var(--c-blue)', 'var(--c-green)', 'var(--c-pink)', 'var(--c-orange)'];
@@ -42,13 +38,13 @@
   const alternatives = $derived(descriptor ? boxDescriptorsOfKind(descriptor.kind) : []);
   const enumParams = $derived(descriptor?.params.filter((p) => p.steps) ?? []);
   const knobParams = $derived(descriptor?.params.filter((p) => !p.steps) ?? []);
-  const address = $derived({ ...segment, boxId: box.id });
+  const address = $derived({ target, boxId: box.id });
 
   const options = (param: ParamDescriptor) =>
     (param.steps ?? []).map((label, i) => ({ value: param.min + i * (param.step ?? 1), label }));
 
   const set = (param: ParamDescriptor, value: number) =>
-    session.run(setBoxParam(address, param.id, value, `Change ${param.name}`));
+    session.runPresetEdit(setBoxParam(address, param.id, value, `Change ${param.name}`));
 </script>
 
 <article class="box" class:bypassed={box.bypassed} aria-label="{name} {descriptor?.kind ?? 'box'}">
@@ -60,8 +56,8 @@
         aria-label="{name} type"
         value={box.type}
         onchange={(event) =>
-          session.run(
-            replaceBox(segment, box.id, (event.currentTarget as HTMLSelectElement).value),
+          session.runPresetEdit(
+            replaceBox(target, box.id, (event.currentTarget as HTMLSelectElement).value),
           )}
       >
         {#each alternatives as alternative (alternative.type)}
@@ -80,27 +76,28 @@
           aria-pressed={!box.bypassed}
           aria-label="{name} on"
           title={box.bypassed ? `Turn ${name} on` : `Bypass ${name}`}
-          onclick={() => session.run(setBoxBypassed(segment, box.id, !box.bypassed))}>⏻</button
+          onclick={() => session.runPresetEdit(setBoxBypassed(target, box.id, !box.bypassed))}
+          >⏻</button
         >
         <button
           type="button"
           aria-label="Move {name} left"
           title="Move left"
           disabled={index === 0}
-          onclick={() => session.run(moveBox(segment, box.id, -1))}>◀</button
+          onclick={() => session.runPresetEdit(moveBox(target, box.id, -1))}>◀</button
         >
         <button
           type="button"
           aria-label="Move {name} right"
           title="Move right"
           disabled={index === count - 1}
-          onclick={() => session.run(moveBox(segment, box.id, 1))}>▶</button
+          onclick={() => session.runPresetEdit(moveBox(target, box.id, 1))}>▶</button
         >
         <button
           type="button"
           aria-label="Remove {name}"
           title="Remove"
-          onclick={() => session.run(removeBox(segment, box.id))}>✕</button
+          onclick={() => session.runPresetEdit(removeBox(target, box.id))}>✕</button
         >
       </div>
     {/if}

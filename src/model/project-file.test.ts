@@ -14,20 +14,14 @@ import {
 function sampleProject() {
   const h = new History(createProject());
   const track = h.state.tracks[2]!;
-  const segment = track.segments[0]!;
+  const synthId = h.state.presets.find((p) => p.id === track.presetId)!.synth.id;
   h.run(setTempo(140));
-  h.run(
-    setBoxParam(
-      { trackId: track.id, segmentId: segment.id, boxId: segment.preset.synth.id },
-      'wave',
-      3,
-    ),
-  );
+  h.run(setBoxParam({ target: { trackId: track.id }, boxId: synthId }, 'wave', 3));
   h.run(
     placeClips([
       {
         trackId: track.id,
-        clip: createClip(960, 3840, [
+        clip: createClip(960, 3840, track.presetId, [
           { id: 'n1', tick: 0, durationTicks: 240, pitch: 60, velocity: 100 },
         ]),
       },
@@ -55,8 +49,10 @@ describe('project files', () => {
       /tracks\[2\]\.clips\[0\]\.notes\[0\]\.pitch should be a number/,
     );
     const noSynth = JSON.parse(serializeProject(sampleProject()));
-    delete noSynth.tracks[0].segments[0].preset.synth;
-    expect(() => parseProject(JSON.stringify(noSynth))).toThrow(/preset\.synth should be a box/);
+    delete noSynth.presets[0].synth;
+    expect(() => parseProject(JSON.stringify(noSynth))).toThrow(
+      /presets\[0\]\.synth should be a box/,
+    );
   });
 
   it('rejects projects from a newer version', () => {

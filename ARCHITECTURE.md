@@ -24,8 +24,8 @@ This document describes how chip-daw is built. For *what* it should be, see [des
 |---|---|
 | Views | Arrangement view only. A loop/live-recording workflow may come later, but it won't be a clone of Ableton's Session view. |
 | Note editing | Recording + a piano roll editor. |
-| Presets on tracks | Always **copies**. Editing a library preset never changes tracks, and editing a track's preset never changes the library. A copy remembers which library preset it came from (informational only). |
-| Tracks and walls | A track is a sequence of **preset segments**. "One preset per track" is just a track with one segment. A wall is the boundary between two segments. |
+| Presets in projects | Always **copies** of library presets. Editing a library preset never changes a project, and editing a project's preset never changes the library. A copy remembers which library preset it came from (informational only). |
+| Track and clip presets | Each track has a **track preset** (played live, used by new recordings) and each clip a **clip preset** (set when it's recorded). Both point into one list of presets per project, so clips can share a preset with each other and with the track. Editing the track preset never changes recorded clips (copy on write). This replaces the "preset walls" of the original design. See [design-principles.md](design-principles.md#terminology). |
 | Voices | Synths are polyphonic (each engine declares a max voice count). |
 | Undo/redo | Required. Every project mutation is undoable. |
 | Audio export | WAV first, MP3 later. |
@@ -61,7 +61,8 @@ UI → engine:
 - `setRecord(armed)`: while armed and playing, live notes are captured into a take
 - `setMetronome(enabled)`
 - `setLatency(seconds)`: output latency, sent by the bridge once audio runs
-- `noteOn(trackId, pitch, velocity, record?)` / `noteOff(trackId, pitch)`: live input (computer keyboard, MIDI); `record: false` for piano roll auditions
+- `noteOn(trackId, pitch, velocity, record?, presetId?)` / `noteOff(trackId, pitch)`: live input (computer keyboard, MIDI); `record: false` and the clip's `presetId` for piano roll auditions
+- `setOverdub(enabled)`: overdub mode, so overdubbed notes play through the clip they land in
 - `allNotesOff()`: releases everything (window blur, Escape, MIDI CC 120/123)
 
 Knob moves during a gesture need no special message: each step is applied to the project immediately and reaches the engine as a normal patch. The transaction only affects how the steps are grouped for undo.
@@ -86,6 +87,7 @@ interface Project {
   name: string;
   masterVolume: number;           // 0..1
   tempoMap: TempoMap;
+  presets: Preset[];              // every preset a track or clip uses (and no others)
   tracks: Track[];                // length = DEFAULT_TRACK_COUNT for new projects; never assume a fixed size
 }
 
@@ -100,14 +102,8 @@ interface Track {
   volume: number;                 // 0..1
   mute: boolean;
   solo: boolean;
-  segments: PresetSegment[];      // sorted by startTick; first one starts at 0
+  presetId: string;               // the track preset, in project.presets
   clips: Clip[];
-}
-
-interface PresetSegment {         // the area between two walls
-  id: string;
-  startTick: Tick;                // segment lasts until the next segment's startTick
-  preset: Preset;                 // a copy owned by this segment
 }
 
 interface Preset {
@@ -127,7 +123,7 @@ interface BoxInstance {
 
 interface AutomationLane {
   target: {
-    boxId: string;                // box in the active segment's preset
+    boxId: string;                // box in the clip's preset
     boxType: string;              // fallback for re-linking, e.g. "fx.bitcrush"
     boxIndex: number;             // nth box of that type in the preset (fallback)
   };
@@ -139,6 +135,7 @@ interface Clip {
   id: string;
   startTick: Tick;
   lengthTicks: Tick;
+  presetId: string;               // the clip preset, in project.presets (may be shared)
   notes: Note[];
   automation: AutomationLane[];   // moves with the clip
 }
@@ -153,14 +150,18 @@ interface Note {
 ```
 
 Rules:
-- **Notes and walls:** a note plays through the preset of the segment it *starts* in, and keeps sounding on that preset until its note-off and release tail end. Clips may cross walls freely.
+- **Presets are shared by reference.** Tracks and clips point at presets by id. `project.presets` holds exactly the presets something points at: commands that drop the last reference to a preset remove it (undo brings it back). Loading a project checks that every reference resolves.
+- **Recording** gives a new clip the track preset (shared, not copied). Overdubbing into existing clips keeps the preset of the first clip it merges with. A clip created by double-click also gets the track preset. Copy, paste, duplicate and moving across tracks keep the clip's preset, so a clip sounds the same wherever it goes. The clipboard holds a copy of each preset, in case the original is gone by the time you paste.
+- **Copy on write for the track preset.** Any edit to the track preset (a param; a box added, removed, moved, replaced or bypassed; a rename) first checks whether a clip or another track uses the same preset. If so, the track switches to a copy and the edit lands on the copy, so recorded clips keep their sound. The copy keeps the original's box ids (so automation lanes still match it) and gets the next free name ("Bass" → "Bass 2").
+- **Editing a clip preset** changes it in place: every clip that shares it changes, and so does the track preset if it's the same one.
+- **Clip preset buttons:** *Make unique* gives the selected clips one copy of their preset, shared among them (box ids kept); *Use track preset* points the selected clips at the track preset; *Load to track* points the track preset at the clip's preset.
 - **Clips on the same track never overlap.** Dropping or resizing a clip over another trims the one underneath, as in Ableton's arrangement view.
 - **Parameter automation lives in clips**, timed relative to the clip start, so moving, copying or inserting time moves automation with the music.
-  - *Linking:* a lane targets a box by `boxId`. If the clip is played by a preset without that id (pasted onto another track, or moved across a wall), the lane re-links to the `boxIndex`-th box of the same `boxType`. Lanes with no match are kept but inactive (shown dimmed).
-  - *Between clips:* a parameter **holds its last automated value** until the next automation point. At the start of each segment, it resets to that segment's preset value.
-  - *Chasing:* on play/seek, the engine finds the most recent automation point before the playhead within the current segment. Playback therefore sounds the same no matter where it starts.
+  - *Linking:* a lane targets a box in the clip's own preset by `boxId`. If the clip switches to a preset without that id (*Use track preset* with an unrelated preset), the lane re-links to the `boxIndex`-th box of the same `boxType`. Lanes with no match are kept but inactive (shown dimmed). Copies made by copy on write and *Make unique* keep box ids, so their lanes stay linked.
+  - *Between clips:* a parameter **holds its last automated value** until the next automation point on clips sharing that preset; a clip with another preset starts from its own preset's values.
+  - *Chasing:* on play/seek, the engine finds the most recent automation point before the playhead. Playback therefore sounds the same no matter where it starts.
   - *Tempo* is the exception: it is song-level, stored in the `tempos` list (`linear` ramps for tempo automation).
-- **Preset library** (folders, presets) is *not* part of the project. It lives in IndexedDB (`src/model/library.ts` for the pure operations, `src/ui/state/library.svelte.ts` for the UI state). Loading a library preset onto a track deep-copies it with fresh ids (`instantiatePreset`, which records `libraryOrigin`) as one undoable command; saving a track's preset to the library copies it the other way. Folders are one level deep; deleting a folder moves its presets to the top level. Library edits aren't in the project's undo history (deleting a preset asks first). A fresh browser gets starter presets (`src/model/factory-presets.ts`, tested to be valid and in range). A stored library that can't be read is never overwritten.
+- **Preset library** (folders, presets) is *not* part of the project. It lives in IndexedDB (`src/model/library.ts` for the pure operations, `src/ui/state/library.svelte.ts` for the UI state). Loading a library preset onto a track deep-copies it with fresh ids (`instantiatePreset`, which records `libraryOrigin`) and makes it the track preset, as one undoable command (recorded clips keep theirs); saving the preset shown in the editor (track or clip preset) to the library copies it the other way. Folders are one level deep; deleting a folder moves its presets to the top level. Library edits aren't in the project's undo history (deleting a preset asks first). A fresh browser gets starter presets (`src/model/factory-presets.ts`, tested to be valid and in range). A stored library that can't be read is never overwritten.
 
 ## Boxes
 
@@ -210,10 +211,12 @@ interface ParamDescriptor {
   - renders offline in a Web Worker for WAV export (sounds exactly like playback),
   - renders to buffers in unit tests under Node.
 - **Transport:** advances a tick position each block. The tempo is read once per block, so a tempo change lands at most 128 samples late (linear tempo ramps arrive with Phase 4). Note events inside a block are applied at their exact sample offset: each track renders its synth in stretches between events.
-- **Clip playback:** each track flattens its clips into note-ons sorted by tick (rebuilt when its clips change, resuming from the current position). Each playing pitch remembers its own end tick, so editing a clip mid-note can't leave a stuck note. Notes that started before the play position aren't "chased" (they don't sound until their next start).
+- **Clip playback:** each track flattens its clips into note-ons sorted by tick (rebuilt when its clips change, resuming from the current position), each tagged with the chain of its clip's preset. Each playing pitch remembers its own end tick and chain, so editing a clip mid-note can't leave a stuck note.
+- **Chains per track:** a track runs one *live chain* for its track preset and one *clip chain* per distinct preset its clips use, each with its own sequencers, synth voices and effects (and tails). Chains are created and dropped on sync. A chain with no held notes that has been silent for 5 s sleeps (skips processing) until its next note, so a track with many clip presets costs about as much as the chains actually sounding. Box runtimes are matched by box id, so when copy on write gives the track preset a new id, the live chain keeps its runtimes (a held note or reverb tail survives).
+- **Which chain hears live notes:** the live chain, except (a) piano roll auditions, which name the clip's preset and play through its clip chain, and (b) overdub recording, where notes play through the preset of the clip under the playhead on that track (what you're adding to), falling back to the live chain between clips. A note-off always reaches the chain that got the note-on. Notes that started before the play position aren't "chased" (they don't sound until their next start).
 - **Recording:** live notes are stamped with the position minus the output latency (what the player was hearing), streamed to the UI as they're played (the timeline draws them live in the red recording region), then sent as a take when the pass ends. The UI turns it into clips with one undoable command: one clip per track, spanning exactly from where recording started to where it stopped (stretched only to fit notes played just before the start). It is not rounded to bars, so stopping mid-bar never replaces material you didn't record over. Without overdub it replaces what was underneath; with overdub it merges with the clips it overlaps.
 - **Metronome:** a short square blip on every beat while playing, accented on the downbeat. It's mixed straight into the master, not part of any track.
-- **Signal flow per track:** clip notes and live notes → sequencer chain (non-bypassed) → synth voices → effect chain (non-bypassed) → track volume/mute/solo → master bus → master volume → soft clipper. Live notes go to the first active sequencer, or straight to the synth when there is none.
+- **Signal flow per track:** in each chain, notes → sequencers (non-bypassed) → synth voices → effects (non-bypassed); the track's chains are summed → track volume/mute/solo → master bus → master volume → soft clipper. Notes go to a chain's first active sequencer, or straight to its synth when there is none.
 - **Real-time rules:**
   - No allocation inside `process()`: voices, buffers and event queues are preallocated.
   - Allocation is allowed only when the structure changes (box added, project loaded), never per block.
@@ -232,7 +235,7 @@ interface ParamDescriptor {
 
 ## Persistence
 
-- **Project file:** `.chip`, the `Project` as JSON (with `formatVersion`). Loading goes JSON → `migrateProject` (upgrades old formats, rejects newer ones) → `validateProject` (checks the shape and names the broken part, e.g. `tracks[2].clips[0].notes[0].pitch should be a number`). It may become a zip if samples are ever added. Code: `src/model/project-file.ts`, `validate.ts`, `migrations.ts`.
+- **Project file:** `.chip`, the `Project` as JSON (with `formatVersion`). Loading goes JSON → `migrateProject` (upgrades old formats, rejects newer ones) → `validateProject` (checks the shape and names the broken part, e.g. `tracks[2].clips[0].notes[0].pitch should be a number`). It may become a zip if samples are ever added. Code: `src/model/project-file.ts`, `validate.ts`, `migrations.ts`. Format 2 (Phase 3C) moved presets from per-track segments into `Project.presets` with `presetId` references; format-1 files are migrated on open (every clip gets its track's preset, so they sound as before).
 - **Project name:** taken from the file name on import and on export (when the save dialog lets the user rename the file).
 - **Preset file:** `.chippreset`, JSON `{ format: "chip-daw-preset", formatVersion: 1, preset }`, validated with the same preset checks as projects. Importing uses the name stored in the file.
 - **Autosave:** every project change schedules a save to IndexedDB 0.8 s later (and immediately when the page is hidden or closed). It's stored as the same serialized text as a `.chip` file and goes through the same parse/migrate/validate path on load. On startup it's restored unless the user already started editing. If storage is unavailable (private browsing), the app keeps working and warns once in the console. Code: `src/persistence/autosave.ts`.
@@ -244,7 +247,8 @@ interface ParamDescriptor {
 - **Layout:** top bar, left sidebar (preset library), center (track arrangement), right sidebar (track presets, mute/solo/volume), bottom panel (preset editor or piano roll).
 - **Canvas** is used for the arrangement timeline, automation lanes and the piano roll. Everything else is Svelte components.
 - **Arrangement timeline** (`src/ui/arrangement/`): pure geometry (tick↔pixel, snap grid by zoom, hit-testing) is unit-tested; the canvas draws a ruler, lanes, clips with a note preview, a recording region and the playhead. While dragging, clips are previewed as ghosts and the edit is committed as one command on release. Interactions: click the ruler to seek; click/Shift-click clips to select; drag to move (also across tracks) or drag an edge to resize, with Alt to disable snapping; double-click an empty lane to create a one-bar clip; Shift+wheel scrolls, Ctrl/Cmd+wheel zooms.
-- **Preset library panel** (left sidebar, `src/ui/library/`): "Save Track N preset", folders that open and close, double-click a preset to load it onto the selected track (a dot marks the preset the track came from), inline rename, and a toolbar for the selected item: Load, Rename, Duplicate, Export, Delete, and a folder picker. The preset editor's header has the track preset's editable name, "Save to library" and "Export".
+- **Preset library panel** (left sidebar, `src/ui/library/`): "Save Track N preset", folders that open and close, double-click a preset to load it onto the selected track (a dot marks the preset the track came from), inline rename, and a toolbar for the selected item: Load, Rename, Duplicate, Export, Delete, and a folder picker. 
+- **Preset editor** (bottom panel, `src/ui/editor/`): shows the **clip preset** when clips on the selected track are selected, otherwise the **track preset**. The header says which one it is and how many clips use it, with the preset's editable name, "Save to library" and "Export". For a clip preset it also has *Make unique*, *Use track preset*, *Load to track* and a way back to the track preset. When the selected clips use different presets, a note says so instead of the chain (only *Use track preset* applies). Clips show their preset's name on the timeline, so you can see which ones share.
 - **Piano roll** (`src/ui/piano-roll/`, bottom panel tab): edits the clip that's selected on its own (double-click a clip to open it). Canvas with a key column, ruler, note grid and a velocity lane; geometry is unit-tested. Click empty space inside the clip to draw a note (drag right to set its length; new notes reuse the last drawn/resized length and the keyboard velocity); drag notes to move them in time and pitch; drag a note's right edge to resize; Shift-click to add to the selection, Shift-drag to select a rectangle; double-click a note to delete it; click or drag across velocity stems to set velocities (all selected notes when dragging a selected one). Grid 1/4–1/32 with Alt to disable snapping; Quantize snaps note starts (the selection, or all notes) to the song grid. Notes sound when drawn, clicked or dragged to a new pitch; these auditions are never recorded (`noteOn` with `record: false`). Each gesture is one undo step: the edit runs as live commands inside a history transaction, so the engine hears changes immediately.
 - **Shortcuts** act on the editor clicked last (`session.focusArea`): in the piano roll on notes, otherwise on clips. Space play/pause, Home go to start, Delete/Backspace delete, Ctrl/Cmd+A select all, Ctrl/Cmd+C/V/D copy/paste/duplicate (clips paste at the playhead on the selected track; notes at the playhead if it's inside the clip, else at its start), ↑/↓ transpose selected notes (Shift: an octave), ←/→ move them by the grid, Escape releases notes and clears the selection, Ctrl/Cmd+S export, Ctrl/Cmd+O import. Keymap handlers can return `false` to leave a key alone (so arrows still scroll when there's nothing to nudge).
 - **Base controls** (knob, slider, meter fader, toggle, segmented selector) form a small in-house kit that defines the OP-1-inspired look. Design tokens (colors, radii, type) are CSS custom properties. The theme is **dark by default**; a light theme exists behind `<html data-theme="light">` for a future setting.

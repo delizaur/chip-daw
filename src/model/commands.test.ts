@@ -8,6 +8,10 @@ import {
 } from './commands';
 import { createProject } from './defaults';
 import { History } from './history';
+import type { Project } from './types';
+
+const trackPreset = (project: Project, index: number) =>
+  project.presets.find((p) => p.id === project.tracks[index]!.presetId)!;
 
 describe('project commands', () => {
   it('change master and track settings, undoably', () => {
@@ -37,16 +41,15 @@ describe('project commands', () => {
   it('sets box params within their range, undoably', () => {
     const project = createProject();
     const track = project.tracks[1]!;
-    const segment = track.segments[0]!;
-    const address = { trackId: track.id, segmentId: segment.id, boxId: segment.preset.synth.id };
+    const address = { target: { trackId: track.id }, boxId: trackPreset(project, 1).synth.id };
     const h = new History(project);
 
     h.run(setBoxParam(address, 'sustain', 0.25, 'Change Sustain'));
-    expect(h.state.tracks[1]!.segments[0]!.preset.synth.params.sustain).toBe(0.25);
+    expect(trackPreset(h.state, 1).synth.params.sustain).toBe(0.25);
     expect(h.undoLabel).toBe('Change Sustain');
 
     h.run(setBoxParam(address, 'wave', 7.6));
-    expect(h.state.tracks[1]!.segments[0]!.preset.synth.params.wave).toBe(5);
+    expect(trackPreset(h.state, 1).synth.params.wave).toBe(5);
 
     h.undo();
     h.undo();

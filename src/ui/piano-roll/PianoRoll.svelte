@@ -183,7 +183,7 @@
   }
 
   function audition(pitch: number, velocity = 100) {
-    if (editing) session.previewNote(editing.track.id, pitch, velocity);
+    if (editing) session.previewNote(editing.track.id, pitch, velocity, editing.clip.presetId);
   }
 
   function notesInMarquee(x0: number, y0: number, x1: number, y1: number): string[] {

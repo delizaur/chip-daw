@@ -8,6 +8,11 @@ export interface Project {
   /** 0..1 */
   masterVolume: number;
   tempoMap: TempoMap;
+  /**
+   * Every preset a track or clip uses, and no others. Tracks and clips point at them by id, so
+   * one preset can be shared (see design-principles.md, "Terminology").
+   */
+  presets: Preset[];
   /** Length is DEFAULT_TRACK_COUNT for new projects; never assume a fixed size. */
   tracks: Track[];
 }
@@ -41,18 +46,13 @@ export interface Track {
   volume: number;
   mute: boolean;
   solo: boolean;
-  /** Sorted by startTick; the first segment starts at tick 0. Boundaries between segments are "walls". */
-  segments: PresetSegment[];
+  /**
+   * The track preset (in `Project.presets`): played live, and used by new recordings. May be
+   * shared with clips; editing it through the track never changes them (copy on write).
+   */
+  presetId: string;
   /** Never overlap on the same track. */
   clips: Clip[];
-}
-
-/** The part of a track between two walls. Lasts until the next segment's startTick. */
-export interface PresetSegment {
-  id: string;
-  startTick: Tick;
-  /** A copy owned by this segment. */
-  preset: Preset;
 }
 
 export interface Preset {
@@ -78,7 +78,7 @@ export interface BoxInstance {
 }
 
 export interface AutomationTarget {
-  /** Box in the active segment's preset. */
+  /** Box in the clip's preset. */
   boxId: string;
   /** Fallback for re-linking, e.g. "fx.bitcrush". */
   boxType: string;
@@ -103,6 +103,8 @@ export interface Clip {
   id: string;
   startTick: Tick;
   lengthTicks: Tick;
+  /** The clip preset (in `Project.presets`), set when recorded. May be shared with other clips. */
+  presetId: string;
   notes: Note[];
   /** Moves with the clip. */
   automation: AutomationLane[];

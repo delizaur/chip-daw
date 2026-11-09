@@ -20,6 +20,7 @@ function cropped(clip: Clip, start: Tick, end: Tick, id: string): Clip {
     id,
     startTick: start,
     lengthTicks: end - start,
+    presetId: clip.presetId,
     notes: absoluteNotes(clip)
       .filter((n) => n.tick >= start && n.tick < end)
       .map((n) => ({ ...n, tick: n.tick - start })),
@@ -65,16 +66,26 @@ export function placeClip(track: Track, clip: Clip): void {
   track.clips.sort((a, b) => a.startTick - b.startTick);
 }
 
-export function createClip(startTick: Tick, lengthTicks: Tick, notes: Note[] = []): Clip {
-  return { id: createId(), startTick, lengthTicks, notes, automation: [] };
+/** A new clip playing with the preset `presetId` (which must be in `Project.presets`). */
+export function createClip(
+  startTick: Tick,
+  lengthTicks: Tick,
+  presetId: string,
+  notes: Note[] = [],
+): Clip {
+  return { id: createId(), startTick, lengthTicks, presetId, notes, automation: [] };
 }
 
-/** Deep copy with fresh ids (for copy/paste and duplicate). Pass plain objects, not drafts. */
+/**
+ * Deep copy with fresh ids (for copy/paste and duplicate), sharing the original's preset.
+ * Pass plain objects, not drafts.
+ */
 export function cloneClip(clip: Clip, startTick: Tick = clip.startTick): Clip {
   return {
     id: createId(),
     startTick,
     lengthTicks: clip.lengthTicks,
+    presetId: clip.presetId,
     notes: clip.notes.map((n) => ({ ...n, id: createId() })),
     automation: clip.automation.map((lane) => ({
       target: { ...lane.target },

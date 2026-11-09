@@ -1,6 +1,6 @@
 # Roadmap
 
-Each phase ends with something usable. Data structures for later features (walls, tempo map, automation) already exist in the model from Phase 0, even when their UI arrives later. See [ARCHITECTURE.md](ARCHITECTURE.md) for the technical design.
+Each phase ends with something usable. Data structures for later features (tempo map, automation) already exist in the model from Phase 0, even when their UI arrives later. See [ARCHITECTURE.md](ARCHITECTURE.md) for the technical design.
 
 ## Phase 0: Foundations ✅
 - [x] Vite + Svelte 5 + TypeScript (strict) + Vitest + lint/format
@@ -35,13 +35,20 @@ Each phase ends with something usable. Data structures for later features (walls
 - [x] Assign library presets to tracks (deep copy); preset import/export (`.chippreset`)
 - [x] WAV export via offline render in a Worker
 
+## Phase 3C: Clip presets ✅
+Recorded clips keep their sound, like the OP-1's tape, but stay editable because they're MIDI. See the terminology in [design-principles.md](design-principles.md#terminology).
+- [x] Model: one list of presets per project; tracks and clips point at them by id (format v2, migrated from v1); unused presets are removed
+- [x] Recording, new clips, paste and duplicate set or keep the clip preset; editing a shared track preset switches the track to a copy first
+- [x] Engine: a live chain per track plus a chain per clip preset (idle chains sleep); overdub and piano roll auditions play through the clip's preset
+- [x] Preset editor shows the clip preset when a clip is selected: header with "used by N clips", Make unique, Use track preset, Load to track
+- [x] Clip preset names on the timeline
+
 ## Phase 4: Time and automation
 - [ ] Clip automation lanes; draw/edit points; hold-last-value + chase on seek
-- [ ] Re-link automation to matching boxes on paste/move; show unmatched lanes as inactive
+- [ ] Re-link automation to matching boxes when a clip's preset changes; show unmatched lanes as inactive
 - [ ] Record automation by moving params while recording (written into the clip under the playhead; a clip is created if none)
-- [ ] Insert/delete bars: shift all clips, walls and tempo/meter events after a point, as one undo step
+- [ ] Insert/delete bars: shift all clips and tempo/meter events after a point, as one undo step
 - [ ] Tempo map UI: BPM / meter / subdivision changes; tempo automation (linear ramps)
-- [ ] Preset walls: split a track into segments, move/delete walls, edit each segment's preset
 
 ## Phase 5: Sounds and polish
 - [ ] More synth engines: Game Boy-style wavetable, FM (Genesis-style), SID-style, possibly a sampler

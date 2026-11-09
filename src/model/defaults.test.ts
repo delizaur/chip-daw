@@ -12,19 +12,18 @@ describe('createProject', () => {
     expect(createProject(12).tracks).toHaveLength(12);
   });
 
-  it('gives every track one segment starting at tick 0', () => {
-    for (const track of createProject().tracks) {
-      expect(track.segments).toHaveLength(1);
-      expect(track.segments[0]?.startTick).toBe(0);
-    }
+  it('gives every track its own track preset, in the project preset list', () => {
+    const project = createProject();
+    expect(project.presets).toHaveLength(project.tracks.length);
+    project.tracks.forEach((track, i) => expect(track.presetId).toBe(project.presets[i]!.id));
   });
 
   it('uses unique ids', () => {
     const project = createProject();
-    const ids = project.tracks.flatMap((t) => [
-      t.id,
-      ...t.segments.flatMap((s) => [s.id, s.preset.id, s.preset.synth.id]),
-    ]);
+    const ids = [
+      ...project.tracks.map((t) => t.id),
+      ...project.presets.flatMap((p) => [p.id, p.synth.id]),
+    ];
     expect(new Set(ids).size).toBe(ids.length);
   });
 

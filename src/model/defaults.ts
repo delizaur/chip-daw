@@ -13,19 +13,21 @@ export function createPreset(name = 'Init'): Preset {
   };
 }
 
-export function createTrack(index: number): Track {
+/** A track with the given track preset (which the caller adds to `Project.presets`). */
+export function createTrack(index: number, presetId: string): Track {
   return {
     id: createId(),
     name: `Track ${index + 1}`,
     volume: 0.8,
     mute: false,
     solo: false,
-    segments: [{ id: createId(), startTick: 0, preset: createPreset() }],
+    presetId,
     clips: [],
   };
 }
 
 export function createProject(trackCount = DEFAULT_TRACK_COUNT): Project {
+  const presets = Array.from({ length: trackCount }, () => createPreset());
   return {
     formatVersion: PROJECT_FORMAT_VERSION,
     name: 'Untitled',
@@ -34,6 +36,7 @@ export function createProject(trackCount = DEFAULT_TRACK_COUNT): Project {
       tempos: [{ tick: 0, bpm: DEFAULT_BPM, ramp: 'step' }],
       meters: [{ tick: 0, numerator: 4, denominator: 4, subdivision: 16 }],
     },
-    tracks: Array.from({ length: trackCount }, (_, i) => createTrack(i)),
+    presets,
+    tracks: presets.map((preset, i) => createTrack(i, preset.id)),
   };
 }
