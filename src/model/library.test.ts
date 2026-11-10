@@ -4,6 +4,7 @@ import { factoryLibrary } from './factory-presets';
 import { createPreset } from './defaults';
 import {
   addFolder,
+  addNewStarters,
   addPreset,
   copyPreset,
   deleteFolder,
@@ -152,5 +153,73 @@ describe('factory presets', () => {
         }
       }
     }
+  });
+});
+
+describe('new starter presets', () => {
+  /** A small "factory": folders Leads and Keys, with a preset in each. */
+  function factory(names: [string, string][]) {
+    const folders = [...new Set(names.map(([folder]) => folder))].map((name) => ({
+      id: `f-${name}`,
+      name,
+    }));
+    return {
+      ...emptyLibrary(),
+      folders,
+      presets: names.map(([folder, name]) => ({
+        folderId: `f-${folder}`,
+        preset: createPreset(name),
+      })),
+      starters: names.map(([, name]) => name),
+    };
+  }
+
+  it('adds the ones a library has not been given, into the folder of the same name', () => {
+    const older = factory([['Leads', 'Square lead']]);
+    const newer = factory([
+      ['Leads', 'Square lead'],
+      ['Leads', 'FM brass'],
+      ['Keys', 'FM e-piano'],
+    ]);
+    const updated = addNewStarters(older, newer);
+    expect(updated.presets.map((p) => p.preset.name)).toEqual([
+      'Square lead',
+      'FM brass',
+      'FM e-piano',
+    ]);
+    const folderOf = (name: string) =>
+      updated.folders.find(
+        (f) => f.id === updated.presets.find((p) => p.preset.name === name)!.folderId,
+      )?.name;
+    expect(folderOf('FM brass')).toBe('Leads');
+    expect(updated.presets[1]!.folderId).toBe(older.folders[0]!.id); // the user's own folder
+    expect(folderOf('FM e-piano')).toBe('Keys'); // created
+    expect(updated.starters).toEqual(['Square lead', 'FM brass', 'FM e-piano']);
+    // Nothing new the second time: the same library comes back.
+    expect(addNewStarters(updated, newer)).toBe(updated);
+  });
+
+  it('does not bring back a starter preset the user deleted', () => {
+    const library = { ...factory([['Leads', 'Square lead']]), presets: [] };
+    expect(addNewStarters(library, factory([['Leads', 'Square lead']])).presets).toEqual([]);
+  });
+
+  it('treats a library from before the starter list as given what it holds', () => {
+    const { starters: _starters, ...old } = factory([['Leads', 'Square lead']]);
+    const updated = addNewStarters(
+      old,
+      factory([
+        ['Leads', 'Square lead'],
+        ['Bass', 'FM bass'],
+      ]),
+    );
+    expect(updated.presets.map((p) => p.preset.name)).toEqual(['Square lead', 'FM bass']);
+    expect(updated.starters).toEqual(['Square lead', 'FM bass']);
+  });
+
+  it('every starter preset of a fresh library counts as given', () => {
+    const fresh = factoryLibrary();
+    expect(fresh.starters).toHaveLength(fresh.presets.length);
+    expect(addNewStarters(fresh, factoryLibrary())).toBe(fresh);
   });
 });

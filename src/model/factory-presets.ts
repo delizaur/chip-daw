@@ -40,7 +40,7 @@ export function factoryLibrary(): Library {
   const [leads, bass, drums, fx] = folders.map((f) => f.id) as [string, string, string, string];
   const entry = (folderId: string, p: Preset): LibraryPreset => ({ folderId, preset: p });
 
-  return {
+  const library: Library = {
     ...emptyLibrary(),
     folders,
     presets: [
@@ -129,6 +129,140 @@ export function factoryLibrary(): Library {
         ),
       ),
       entry(
+        leads,
+        preset(
+          'FM brass',
+          {
+            ratio: ratio(1),
+            amount: 0.55,
+            modDecay: 0.7,
+            modSustain: 0.55,
+            feedback: 0.25,
+            attack: 0.04,
+            decay: 0.5,
+            sustain: 0.8,
+            release: 0.15,
+          },
+          { ...fm, effects: [box('fx.reverb', { wet: 0.15 })] },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'FM organ',
+          {
+            ratio: ratio(2),
+            amount: 0.3,
+            modDecay: 0.05,
+            modSustain: 0.9,
+            attack: 0.005,
+            decay: 0.1,
+            sustain: 1,
+            release: 0.06,
+            level: 0.6,
+          },
+          fm,
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'FM saw lead',
+          {
+            ratio: ratio(1),
+            amount: 0.45,
+            modDecay: 0.4,
+            modSustain: 0.7,
+            feedback: 0.75,
+            decay: 0.4,
+            sustain: 0.75,
+            release: 0.12,
+            level: 0.6,
+          },
+          { ...fm, effects: [box('fx.delay', { time: division('1/8d'), wet: 0.2 })] },
+        ),
+      ),
+      entry(
+        bass,
+        preset(
+          'FM slap bass',
+          {
+            ratio: ratio(3),
+            amount: 0.7,
+            modDecay: 0.06,
+            modSustain: 0.05,
+            feedback: 0.15,
+            decay: 0.35,
+            sustain: 0.4,
+            release: 0.06,
+            transpose: -12,
+            level: 0.85,
+          },
+          fm,
+        ),
+      ),
+      entry(
+        drums,
+        preset(
+          'FM tom',
+          {
+            ratio: ratio(0.5),
+            amount: 0.5,
+            modDecay: 0.05,
+            modSustain: 0,
+            decay: 0.25,
+            sustain: 0,
+            release: 0.1,
+            transpose: -12,
+            level: 0.9,
+          },
+          fm,
+        ),
+      ),
+      entry(
+        drums,
+        preset(
+          'FM metal hat',
+          {
+            ratio: ratio(15),
+            amount: 1,
+            modDecay: 0.08,
+            modSustain: 0.4,
+            feedback: 1,
+            decay: 0.06,
+            sustain: 0,
+            release: 0.04,
+            transpose: 24,
+            level: 0.4,
+          },
+          fm,
+        ),
+      ),
+      entry(
+        fx,
+        preset(
+          'FM bell pad',
+          {
+            ratio: ratio(7),
+            amount: 0.35,
+            modDecay: 1.5,
+            modSustain: 0.2,
+            attack: 0.4,
+            decay: 1.5,
+            sustain: 0.5,
+            release: 1.5,
+            level: 0.6,
+          },
+          {
+            ...fm,
+            effects: [
+              box('fx.delay', { time: division('1/4d'), feedback: 0.4, wet: 0.25 }),
+              box('fx.reverb', { size: 0.85, wet: 0.35 }),
+            ],
+          },
+        ),
+      ),
+      entry(
         bass,
         preset('Triangle bass', {
           wave: ChipWave.Triangle,
@@ -204,4 +338,5 @@ export function factoryLibrary(): Library {
       ),
     ],
   };
+  return { ...library, starters: library.presets.map((p) => p.preset.name) };
 }

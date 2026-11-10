@@ -2,6 +2,7 @@ import { loadTrackPreset } from '../../model/chain-commands';
 import { factoryLibrary } from '../../model/factory-presets';
 import {
   addFolder,
+  addNewStarters,
   addPreset,
   deleteFolder,
   deletePreset,
@@ -49,7 +50,17 @@ class LibraryStore {
     try {
       const stored = await readStored(STORAGE_KEY);
       if (typeof stored === 'string') {
-        this.library = validateLibrary(JSON.parse(stored));
+        const library = validateLibrary(JSON.parse(stored));
+        // Starter presets added since this library was made (e.g. a new synth's) arrive once.
+        const updated = addNewStarters(library, factoryLibrary());
+        const added = updated.presets.length - library.presets.length;
+        if (updated === library) this.library = library;
+        else this.#commit(updated);
+        if (added > 0) {
+          session.showNotice(
+            `Added ${added} new starter preset${added === 1 ? '' : 's'} to the library`,
+          );
+        }
       } else {
         this.#commit(factoryLibrary());
       }
