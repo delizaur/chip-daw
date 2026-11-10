@@ -35,6 +35,7 @@ import {
   serializeProject,
 } from '../../model/project-file';
 import { targetFor } from '../../model/automation';
+import type { RecordedParamMove } from '../../model/automation-commands';
 import { constrainParam, getParamDescriptor } from '../../model/boxes/registry';
 import { findPresetById, presetUsage, type PresetTarget } from '../../model/presets';
 import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
@@ -218,6 +219,13 @@ class Session {
    * recorded as automation; the preset keeps its own values.
    */
   liveParams = $state.raw<Readonly<Record<string, number>>>({});
+  /**
+   * Knob moves of the recording pass in progress (song ticks, from the playhead), for the
+   * piano roll to draw live. A new pass starts with the latched values (see the engine).
+   */
+  liveMoves = $state.raw<readonly RecordedParamMove[]>([]);
+  /** The last move per param ("boxId:paramId"): what each new pass starts with. */
+  #latchedMoves: Record<string, RecordedParamMove> = {};
   /** Notes copied in the piano roll, ticks relative to the first one. */
   #noteClipboard: Note[] = [];
 
@@ -253,12 +261,17 @@ class Session {
         if (message.seekSeq >= this.#seekSeq) this.#setPosition(message.tick);
       } else if (message.type === 'takeStarted') {
         this.liveTake = { startTick: message.startTick, notes: [] };
+        this.liveMoves = Object.values(this.#latchedMoves).map((m) => ({
+          ...m,
+          tick: message.startTick,
+        }));
       } else if (message.type === 'takeNote') {
         const notes = [...(this.liveTake?.notes ?? [])];
         notes[message.index] = { ...message.note, held: message.held };
         this.liveTake = { startTick: this.liveTake?.startTick ?? message.note.startTick, notes };
       } else if (message.type === 'recorded') {
         this.liveTake = null;
+        this.liveMoves = [];
         const { take } = message;
         if (take.notes.length > 0 || (take.params?.length ?? 0) > 0) {
           this.run(recordTake(take, this.overdub));
@@ -717,6 +730,16 @@ class Session {
       value: constrained,
     });
     this.liveParams = { ...this.liveParams, [`${box.id}:${paramId}`]: constrained };
+    // For the live preview: stamped at the playhead (the engine stamps the saved ones exactly).
+    const move: RecordedParamMove = {
+      trackId: track.id,
+      target: targetFor(preset, box),
+      paramId,
+      value: constrained,
+      tick: this.liveTake ? this.playheadAt() : this.position,
+    };
+    this.#latchedMoves[`${box.id}:${paramId}`] = move;
+    if (this.liveTake) this.liveMoves = [...this.liveMoves, move];
   }
 
   #curveCache: { clips: readonly Clip[]; preset: Preset; curves: AutomationCurve[] } | null = null;
@@ -742,6 +765,8 @@ class Session {
   /** Recording stopped: knobs show the preset's own values again (the engine resets too). */
   #endKnobRecording(): void {
     if (Object.keys(this.liveParams).length > 0) this.liveParams = {};
+    this.#latchedMoves = {};
+    if (this.liveMoves.length > 0) this.liveMoves = [];
   }
 
   /** Shows the track preset in the editor (deselects the clips). */

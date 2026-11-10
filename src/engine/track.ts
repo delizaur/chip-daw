@@ -102,6 +102,12 @@ export class PresetChain {
   /** Automation curves for this chain's preset, and the value each last applied (NaN: none). */
   #curves: AutomationCurve[] = [];
   #applied = new Float64Array(0);
+  /**
+   * Params whose automation is paused ("boxId\u0000paramId"): a knob moved while recording owns
+   * them until it stops. `#paused` flags the matching curves (read every block).
+   */
+  readonly #pausedParams = new Set<string>();
+  #paused = new Uint8Array(0);
   /** The preset the curves were built for (the track rebuilds them when it changes). */
   curvesFor: Preset | null = null;
 
@@ -221,12 +227,30 @@ export class PresetChain {
     }
     this.#curves = curves;
     this.#applied = new Float64Array(curves.length).fill(NaN);
+    this.#paused = Uint8Array.from(curves, (c) =>
+      this.#pausedParams.has(`${c.boxId}\u0000${c.paramId}`) ? 1 : 0,
+    );
+  }
+
+  /** Pauses a param's automation (a knob moved while recording owns it). */
+  pauseAutomation(boxId: string, paramId: string): void {
+    this.#pausedParams.add(`${boxId}\u0000${paramId}`);
+    this.#curves.forEach((c, i) => {
+      if (c.boxId === boxId && c.paramId === paramId) this.#paused[i] = 1;
+    });
+  }
+
+  /** Every param follows its automation again. */
+  resumeAutomation(): void {
+    this.#pausedParams.clear();
+    this.#paused.fill(0);
   }
 
   /** Applies the automation at `tick` (hold and chase: the value there, wherever you came from). */
   automate(tick: Tick): void {
     const curves = this.#curves;
     for (let i = 0; i < curves.length; i++) {
+      if (this.#paused[i] === 1) continue;
       const curve = curves[i]!;
       const value = curve.valueAt(tick);
       const applied = this.#applied[i]!;
@@ -468,12 +492,15 @@ export class TrackRuntime {
 
   /**
    * A knob moved while recording: heard at once on everything this track plays (the live
-   * chain and every clip chain whose preset has that box), until `releaseMoves`.
+   * chain and every clip chain whose preset has that box), and that param's automation pauses,
+   * so the knob owns it until `releaseMoves`.
    */
   moveParam(target: AutomationTarget, paramId: string, value: number): void {
     for (const chain of this.#chains) {
       const box = chain.preset && resolveTarget(chain.preset, target);
-      if (box) chain.setOverride(box.id, paramId, value);
+      if (!box) continue;
+      chain.pauseAutomation(box.id, paramId);
+      chain.setOverride(box.id, paramId, value);
     }
     this.#moved = true;
   }
@@ -484,6 +511,7 @@ export class TrackRuntime {
     this.#moved = false;
     this.live.clearOverrides();
     for (const chain of this.#clipChains.values()) {
+      chain.resumeAutomation();
       chain.clearOverrides();
       chain.automate(tick);
     }

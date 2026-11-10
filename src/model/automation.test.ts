@@ -113,6 +113,22 @@ describe('recording knob moves', () => {
     ]);
   });
 
+  it('replaces points up to where recording stopped: a moved knob holds until then', () => {
+    const preset = createPreset();
+    const target = targetFor(preset, preset.synth);
+    const clip = createClip(0, BAR, preset.id);
+    clip.automation = [
+      { target, paramId: 'level', points: [point(100, 0.1), point(2000, 0.1), point(3000, 0.1)] },
+    ];
+    const move = { trackId: 't', target, paramId: 'level', tick: 500, value: 0.6 };
+    writeRecordedMoves(clip, [move], 2500);
+    expect(clip.automation[0]!.points).toEqual([
+      point(100, 0.1),
+      point(500, 0.6),
+      point(3000, 0.1),
+    ]);
+  });
+
   it('writes moves into the clip under the take when no notes were played', () => {
     const h = new History(createProject(1));
     const track = () => h.state.tracks[0]!;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { targetFor } from '../model/automation';
 import { createBox } from '../model/boxes/registry';
 import { createClip } from '../model/clips';
-import { placeClips } from '../model/commands';
+import { placeClips, setLoopRegion } from '../model/commands';
 import { PPQ } from '../model/constants';
 import { createPreset, createProject } from '../model/defaults';
 import { History } from '../model/history';
@@ -132,6 +132,44 @@ describe('knob moves while recording', () => {
     const recorded = messages.find((m) => m.type === 'recorded');
     expect(recorded?.type === 'recorded' && recorded.take.params).toEqual([
       expect.objectContaining({ paramId: 'level', value: 0.2, tick: 0 }),
+    ]);
+  });
+});
+
+describe('a knob moved while recording owns its param', () => {
+  it('overrides the clip automation until recording stops', () => {
+    const { engine, trackId, preset, levelLane, place, render } = setup();
+    const clip = createClip(0, 16 * PPQ, preset().id, [held(16 * PPQ)]);
+    clip.automation = [{ ...levelLane(PPQ), points: [{ tick: 0, value: 0, curve: 'step' }] }];
+    place(clip);
+    engine.handle({ type: 'play' });
+    engine.handle({ type: 'setRecord', armed: true });
+    // (after the synth's level smoothing settles from the preset's 70%)
+    expect(peak(render(0.3).subarray(4800))).toBeLessThan(0.01); // the automation says level 0
+    const target = targetFor(preset(), preset().synth);
+    engine.handle({ type: 'paramMove', trackId, target, paramId: 'level', value: 0.7 });
+    render(0.1);
+    expect(peak(render(0.5))).toBeGreaterThan(0.05); // the knob wins, and keeps winning
+    engine.handle({ type: 'setRecord', armed: false });
+    render(0.1);
+    expect(peak(render(0.3))).toBeLessThan(0.01); // the automation is back
+  });
+
+  it('starts every loop pass with its latched value', () => {
+    const { engine, history, messages, trackId, preset, render } = setup();
+    history.run(setLoopRegion(0, 2 * PPQ)); // one second
+    engine.handle({ type: 'setLoop', enabled: true });
+    engine.handle({ type: 'play' });
+    engine.handle({ type: 'setRecord', armed: true });
+    render(0.3);
+    const target = targetFor(preset(), preset().synth);
+    engine.handle({ type: 'paramMove', trackId, target, paramId: 'level', value: 0.3 });
+    render(1); // past the loop end: a second pass starts
+    engine.handle({ type: 'pause' });
+    const passes = messages.flatMap((m) => (m.type === 'recorded' ? [m.take] : []));
+    expect(passes).toHaveLength(2);
+    expect(passes[1]!.params).toEqual([
+      expect.objectContaining({ paramId: 'level', value: 0.3, tick: 0 }),
     ]);
   });
 });

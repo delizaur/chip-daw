@@ -68,8 +68,12 @@ export class Engine {
   #countIn: Tick = 0;
   /** Length of the current count-in, in ticks. */
   #countInTotal: Tick = 0;
-  /** Knob moves during the count-in: the last value per param, recorded at the start. */
-  readonly #countInMoves = new Map<string, RecordedParamMove>();
+  /**
+   * The last value of each knob moved while recording ("trackId:boxId:paramId"): it holds
+   * (latches) until recording stops, so each new pass (after the count-in, at every loop jump)
+   * starts with it, and the saved automation matches what was heard.
+   */
+  readonly #latched = new Map<string, RecordedParamMove>();
   /** Notes played in the last moment of the count-in, still held ("trackId:pitch" → note). */
   readonly #earlyNotes = new Map<string, { trackId: string; pitch: number; velocity: number }>();
   readonly #window: PlayWindow = { start: 0, end: 0, ticksPerSample: 0 };
@@ -135,15 +139,15 @@ export class Engine {
         const { trackId, target, paramId, value } = message;
         this.#tracksById.get(trackId)?.moveParam(target, paramId, value);
         const take = this.#take;
+        if (take || (this.#countIn > 0 && this.#recordArmed)) {
+          const key = `${trackId}:${target.boxId}:${paramId}`;
+          this.#latched.set(key, { trackId, target, paramId, value, tick: 0 });
+        }
         if (take) {
           const tick = take.looped
             ? Math.max(take.startTick, this.#heardPosition())
             : this.#heardPosition();
           take.params.push({ trackId, target, paramId, value, tick });
-        } else if (this.#countIn > 0 && this.#recordArmed) {
-          // Set during the count-in: the value the recording starts with.
-          const key = `${trackId}:${target.boxId}:${paramId}`;
-          this.#countInMoves.set(key, { trackId, target, paramId, value, tick: 0 });
         }
         break;
       }
@@ -173,7 +177,7 @@ export class Engine {
         if (this.#countIn > 0) {
           this.#countIn = 0;
           this.#earlyNotes.clear();
-          this.#countInMoves.clear();
+          this.#latched.clear();
           for (const track of this.#tracks) track.releaseMoves(this.#position);
           this.#reportTransport();
           break;
@@ -229,12 +233,9 @@ export class Engine {
         take.held.set(key, index);
         this.#emitTakeNote(take, index, true);
       }
-      for (const move of this.#countInMoves.values()) {
-        take.params.push({ ...move, tick: take.startTick });
-      }
+      this.#pushLatched(take);
     }
     this.#earlyNotes.clear();
-    this.#countInMoves.clear();
     this.#reportTransport();
   }
 
@@ -270,6 +271,7 @@ export class Engine {
     } else if (!recording) {
       this.#endTake();
       // Knobs moved while recording only changed the sound for the take.
+      this.#latched.clear();
       for (const track of this.#tracks) track.releaseMoves(this.#position);
     }
   }
@@ -498,8 +500,16 @@ export class Engine {
     for (const track of this.#tracks) track.locate(tick);
     if (recording) {
       this.#updateTake();
-      if (this.#take) this.#take.looped = true;
+      if (this.#take) {
+        this.#take.looped = true;
+        this.#pushLatched(this.#take);
+      }
     }
+  }
+
+  /** A new pass starts with the latched knob values (the count-in's, or the last pass's). */
+  #pushLatched(take: Take): void {
+    for (const move of this.#latched.values()) take.params.push({ ...move, tick: take.startTick });
   }
 
   #report(): void {

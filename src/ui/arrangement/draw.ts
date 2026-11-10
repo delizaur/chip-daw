@@ -48,6 +48,11 @@ export interface TakePreview {
   /** Tracks to draw a recording region on (the selected track, plus any receiving notes). */
   trackIndices: number[];
   notes: { trackIndex: number; pitch: number; startTick: Tick; endTick: Tick; held: boolean }[];
+  /**
+   * Knob moves so far, one line per moved param: each point's value as 0..1 of the param's
+   * range (its height in the lane). The last value holds up to the playhead.
+   */
+  moves: { trackIndex: number; points: { tick: Tick; level: number }[] }[];
 }
 
 function drawClip(
@@ -148,6 +153,24 @@ function drawTake(
     roundRect(ctx, x, y, w, h, 5);
     ctx.fill();
     ctx.globalAlpha = 1;
+
+    // Knob moves: a yellow line per param (steps between moves), holding to the playhead.
+    ctx.save();
+    ctx.strokeStyle = color('var(--c-yellow)');
+    ctx.lineWidth = 1.5;
+    for (const line of take.moves) {
+      if (line.trackIndex !== trackIndex || line.points.length === 0) continue;
+      const level = (n: number) => y + 4 + (1 - n) * (h - 8);
+      ctx.beginPath();
+      line.points.forEach((p, i) => {
+        const px = tickToX(view, p.tick);
+        if (i === 0) ctx.moveTo(px, level(p.level));
+        else ctx.lineTo(px, level(p.level));
+      });
+      ctx.lineTo(tickToX(view, playhead), level(line.points[line.points.length - 1]!.level));
+      ctx.stroke();
+    }
+    ctx.restore();
 
     const notes = take.notes.filter((n) => n.trackIndex === trackIndex);
     if (notes.length === 0) continue;

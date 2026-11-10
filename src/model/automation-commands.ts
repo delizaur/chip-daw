@@ -89,9 +89,14 @@ export function deleteLane(
 /**
  * Writes recorded knob moves into a clip: per lane, the moves inside the clip become points
  * (relative ticks, merged when closer than a 64th) that replace the lane's existing points
- * between the first and last move. Moves outside the clip are ignored.
+ * from the first move to `until` (where recording stopped: a moved knob holds its value until
+ * then, as heard while recording), or to the last move. Moves outside the clip are ignored.
  */
-export function writeRecordedMoves(clip: Draft<Clip>, moves: readonly RecordedParamMove[]): void {
+export function writeRecordedMoves(
+  clip: Draft<Clip>,
+  moves: readonly RecordedParamMove[],
+  until?: Tick,
+): void {
   const lanes = new Map<string, RecordedParamMove[]>();
   for (const move of moves) {
     const relative = move.tick - clip.startTick;
@@ -113,7 +118,8 @@ export function writeRecordedMoves(clip: Draft<Clip>, moves: readonly RecordedPa
       else points.push({ tick, value, curve });
     }
     const from = points[0]!.tick;
-    const to = points[points.length - 1]!.tick;
+    const lastMove = points[points.length - 1]!.tick;
+    const to = until === undefined ? lastMove : Math.max(lastMove, until - clip.startTick);
     let lane = clip.automation.find((l) => sameLane(l, target.boxId, paramId));
     if (!lane) {
       clip.automation.push({ target: { ...target }, paramId, points: [] });

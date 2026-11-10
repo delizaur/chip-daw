@@ -274,7 +274,8 @@ const MIN_NOTE_TICKS = 15;
  * Knob moves (`take.params`) become automation: on a track that got notes, in the clip the take
  * makes; on a track that only got moves, in the clips already under the recorded time (notes
  * untouched), or in a new empty clip spanning the take when there are none. Each lane's moves
- * replace its points between the first and the last move.
+ * replace its points from the first move to where recording stopped (a moved knob holds its
+ * value until then, as heard).
  */
 export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand {
   return {
@@ -298,10 +299,10 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
         const under = track.clips.filter((c) => c.startTick < end && clipEnd(c) > start);
         if (under.length === 0) {
           const clip = createClip(start, end - start, track.presetId);
-          writeRecordedMoves(clip, moves);
+          writeRecordedMoves(clip, moves, take.endTick);
           placeClip(track, clip);
         } else {
-          for (const clip of under) writeRecordedMoves(clip, moves);
+          for (const clip of under) writeRecordedMoves(clip, moves, take.endTick);
         }
       }
 
@@ -347,7 +348,7 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
           notes.map((n) => ({ ...n, tick: n.tick - start })),
         );
         clip.automation = mergeLanes(overlapping, start);
-        writeRecordedMoves(clip, movesByTrack.get(trackId) ?? []);
+        writeRecordedMoves(clip, movesByTrack.get(trackId) ?? [], take.endTick);
         placeClip(track, clip);
       }
       prunePresets(project);

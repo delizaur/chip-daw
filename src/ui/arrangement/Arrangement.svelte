@@ -13,7 +13,9 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { getParamDescriptor } from '../../model/boxes/registry';
   import { moveClips, resizeClip, setLoopRegion } from '../../model/commands';
+  import { toNormalized } from '../../model/scale';
   import { PPQ } from '../../model/constants';
   import { floorTo, snapTick, ticksPerBar } from '../../model/time';
   import type { Clip, Tick } from '../../model/types';
@@ -101,7 +103,21 @@
     const trackIndices = [
       ...new Set([session.selectedTrackIndex, ...notes.map((n) => n.trackIndex)]),
     ];
-    return { startTick: take.startTick, trackIndices, notes };
+    // Knob moves, one line per param, as heights within the param's range.
+    const lines: Record<string, { trackIndex: number; points: { tick: Tick; level: number }[] }> =
+      {};
+    for (const move of session.liveMoves) {
+      const trackIndex = indexOf.get(move.trackId);
+      const param = getParamDescriptor(move.target.boxType, move.paramId);
+      if (trackIndex === undefined || !param) continue;
+      const key = `${move.trackId}:${move.target.boxId}:${move.paramId}`;
+      lines[key] ??= { trackIndex, points: [] };
+      lines[key].points.push({
+        tick: Math.max(take.startTick, move.tick),
+        level: toNormalized(move.value, param.min, param.max, param.scale),
+      });
+    }
+    return { startTick: take.startTick, trackIndices, notes, moves: Object.values(lines) };
   }
 
   function draw() {
@@ -162,6 +178,7 @@
       session.selectedClipIds,
       session.position,
       session.liveTake,
+      session.liveMoves,
     ];
     draw();
   });
