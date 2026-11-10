@@ -24,6 +24,8 @@ export interface TimelineScene {
   height: number;
   selectedTrack: number;
   selectedClips: ReadonlySet<string>;
+  /** Clips an edit in the preset editor would change (lit like selected, see `presetReach`). */
+  affectedClips: ReadonlySet<string>;
   playhead: Tick;
   /** The recording pass in progress (drawn live); null when not recording. */
   take: TakePreview | null;
@@ -57,7 +59,7 @@ function drawClip(
   startTick: Tick,
   lengthTicks: Tick,
   notesStart: Tick,
-  style: 'normal' | 'selected' | 'dimmed' | 'ghost',
+  style: 'normal' | 'selected' | 'affected' | 'dimmed' | 'ghost',
 ) {
   const x = tickToX(scene.view, startTick);
   const w = Math.max(2, lengthTicks * scene.view.pixelsPerTick);
@@ -69,7 +71,9 @@ function drawClip(
   ctx.globalAlpha = style === 'dimmed' ? 0.25 : 1;
   roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 5);
   ctx.fillStyle = color;
-  ctx.globalAlpha *= style === 'selected' || style === 'ghost' ? 0.55 : 0.32;
+  const bright = style === 'selected' || style === 'affected' || style === 'ghost';
+  ctx.globalAlpha *= bright ? 0.55 : 0.32;
+  // 'affected' clips are lit exactly like selected ones, without the white outline.
   ctx.fill();
   ctx.globalAlpha = style === 'dimmed' ? 0.25 : 1;
   ctx.lineWidth = style === 'selected' ? 2 : 1;
@@ -263,7 +267,9 @@ export function drawTimeline(
         ? 'dimmed'
         : scene.selectedClips.has(clip.id)
           ? 'selected'
-          : 'normal';
+          : scene.affectedClips.has(clip.id)
+            ? 'affected'
+            : 'normal';
       drawClip(ctx, scene, c, i, clip, clip.startTick, clip.lengthTicks, clip.startTick, style);
     }
   });

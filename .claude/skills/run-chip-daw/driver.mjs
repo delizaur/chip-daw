@@ -488,6 +488,17 @@ async function smoke(c) {
     (await editorText('usage')) === 'Used by 2 clips',
     `the clip preset says how many clips use it (${await editorText('usage')})`,
   );
+  // What an edit would change is highlighted: both clips (they share the preset), no track.
+  const reach = async () =>
+    JSON.parse(
+      await c.eval([
+        "(() => { const r = chipDaw.session.presetReach; const headers = [...document.querySelectorAll('.lane-header.affected .name')].map(e => e.textContent).join(','); return `${r.clipIds.size} clips; ${headers}`; })()",
+      ]),
+    );
+  check(
+    (await reach()) === '2 clips; ',
+    `both clips sharing the preset are highlighted (${await reach()})`,
+  );
   await c.click(['button', 'Make', 'unique']);
   await c.click(['radio', 'Noise']);
   ps = await presets();
@@ -506,8 +517,16 @@ async function smoke(c) {
   await c.click(['button', 'Load', 'to', 'track']);
   ps = await presets();
   check(ps.startsWith('Init 2/2/fx.bitcrush | Init 3/4/ | Init 3/4/'), `Load to track (${ps})`);
+  check(
+    (await reach()) === '1 clips; Track 4',
+    `the track whose preset it now is gets highlighted too (${await reach()})`,
+  );
   await c.click(['button', 'Show', 'track', 'preset']);
   check((await editorKind()) === 'Track 4 preset', 'the back button shows the track preset');
+  check(
+    (await reach()) === '0 clips; Track 4',
+    `a track preset edit highlights only its track (${await reach()})`,
+  );
   await c.screenshot(['3-arrangement']);
 
   // Piano roll: double-click an empty lane (track 6, bar 1) to create a clip, then double-click

@@ -46,6 +46,9 @@
 
   const tracks = $derived(session.project.tracks);
   const presetNames = $derived(new Map(session.project.presets.map((p) => [p.id, p.name])));
+  /** Tracks and clips an edit in the preset editor would change, highlighted. */
+  const reach = $derived(session.presetReach);
+  const noClips: ReadonlySet<string> = new Set();
   /** The loop region while looping is on (null hides the markers). */
   const loop = $derived(session.loopEnabled ? session.project.loop : null);
   const meter = $derived(session.project.tempoMap.meters[0]!);
@@ -121,6 +124,7 @@
       height,
       selectedTrack: session.selectedTrackIndex,
       selectedClips: session.selectedClipIds,
+      affectedClips: reach?.clipIds ?? noClips,
       playhead: session.playheadAt(),
       take: takePreview(),
       ghosts,
@@ -153,6 +157,7 @@
       themeVersion,
       presetNames,
       loop,
+      reach,
       session.selectedTrackIndex,
       session.selectedClipIds,
       session.position,
@@ -418,6 +423,7 @@
           type="button"
           class="lane-header"
           class:selected={session.selectedTrackIndex === i}
+          class:affected={reach?.trackIds.has(track.id) ?? false}
           style:--color={trackColor(i)}
           aria-label="Select {track.name}"
           aria-pressed={session.selectedTrackIndex === i}
@@ -520,6 +526,19 @@
 
   .lane-header.selected {
     background: color-mix(in srgb, var(--color) 22%, var(--screen-raised));
+  }
+
+  /* An edit in the preset editor would change this track's preset: a white-ish tint. */
+  .lane-header.affected {
+    background: color-mix(in srgb, #fff 16%, var(--screen-raised));
+  }
+
+  .lane-header.selected.affected {
+    background: color-mix(
+      in srgb,
+      #fff 16%,
+      color-mix(in srgb, var(--color) 22%, var(--screen-raised))
+    );
   }
 
   .number {

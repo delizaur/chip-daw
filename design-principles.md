@@ -72,7 +72,7 @@ Sequencers, synths and effects are represented as "boxes", that can be freely sw
   * Every track also has a mute and solo button, and a volume control.
 * #### Preset editing (bottom of the screen)
 
-  * When editing a preset (from the left preset list, a track or a clip), the bottom of the screen acts as the preset editing area. Its header always says which preset it is editing (track or clip preset) and how many clips use it. Like in ableton Live, the preset "boxes" are shown from left to right, with every parameter visible and editable.
+  * When editing a preset (from the left preset list, a track or a clip), the bottom of the screen acts as the preset editing area. Its header always says which preset it is editing (track or clip preset) and how many clips use it, and the arrangement highlights the clips and tracks an edit would change. Like in ableton Live, the preset "boxes" are shown from left to right, with every parameter visible and editable.
   * Sequencers, synths and effects can be added or replaced from a list.
   * Modifying a parameter while recording automates it.
 

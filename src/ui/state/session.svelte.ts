@@ -256,6 +256,20 @@ class Session {
     return track ? findPresetById(this.project, track.presetId) : undefined;
   }
 
+  /**
+   * What an edit in the preset editor would change, to highlight it in the arrangement (null
+   * when the editor isn't showing an editable preset). A track preset edit changes only that
+   * track: clips using the same preset keep their sound (copy on write). A clip preset edit
+   * changes every clip sharing it, on any track, and every track whose preset it is.
+   */
+  get presetReach(): { trackIds: ReadonlySet<string>; clipIds: ReadonlySet<string> } | null {
+    const view = this.bottomTab === 'preset' ? this.presetView : null;
+    if (!view || view.kind === 'mixed') return null;
+    if (view.kind === 'track') return { trackIds: new Set([view.track.id]), clipIds: new Set() };
+    const usage = presetUsage(this.project, view.preset.id);
+    return { trackIds: new Set(usage.trackIds), clipIds: new Set(usage.clipIds) };
+  }
+
   /** What the preset editor shows (see PresetView). */
   get presetView(): PresetView | null {
     const project = this.project;

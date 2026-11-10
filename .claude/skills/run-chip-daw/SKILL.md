@@ -40,7 +40,7 @@ recording (one undo step); dragging the clip on the canvas
 moves it a bar later and a track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z restores; Space
 plays the clip back; clip presets: editing track 3's preset (which those clips use) switches the
 track to a copy with a notice while the clips keep theirs, selecting a clip shows "Clip preset ·
-Used by 2 clips", and Make unique, Use track preset, Load to track and the back button work;
+Used by 2 clips" and highlights the clips and track headers an edit would change, and Make unique, Use track preset, Load to track and the back button work;
 double-clicks create a clip and open it in the piano roll, where drawing,
 moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
 and the notes play back; the key left of 1 turns the keyboard piano off (letters then play
