@@ -4,6 +4,7 @@
  */
 import { ChipWave } from './boxes/chip-synth';
 import { ArpMode, ARP_RATES, FilterType, SYNC_DIVISIONS } from './boxes/effects';
+import { FM_RATIOS } from './boxes/fm-synth';
 import { createBox } from './boxes/registry';
 import { createId } from './ids';
 import { emptyLibrary, type Library, type LibraryPreset } from './library';
@@ -17,16 +18,20 @@ function box(type: string, params: Record<string, number> = {}): BoxInstance {
 function preset(
   name: string,
   synth: Record<string, number>,
-  chain: { sequencers?: BoxInstance[]; effects?: BoxInstance[] } = {},
+  chain: { sequencers?: BoxInstance[]; effects?: BoxInstance[]; synthType?: string } = {},
 ): Preset {
   return {
     id: createId(),
     name,
     sequencers: chain.sequencers ?? [],
-    synth: box('synth.chip', synth),
+    synth: box(chain.synthType ?? 'synth.chip', synth),
     effects: chain.effects ?? [],
   };
 }
+
+/** FM ratio param value for a modulator multiple. */
+const ratio = (multiple: number) => FM_RATIOS.indexOf(multiple as (typeof FM_RATIOS)[number]);
+const fm = { synthType: 'synth.fm' };
 
 const division = (label: string) => SYNC_DIVISIONS.findIndex((d) => d.label === label);
 
@@ -69,6 +74,58 @@ export function factoryLibrary(): Library {
               box('fx.reverb', { wet: 0.2 }),
             ],
           },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'FM e-piano',
+          {
+            ratio: ratio(1),
+            amount: 0.45,
+            modDecay: 0.6,
+            modSustain: 0.1,
+            decay: 1.4,
+            sustain: 0.25,
+            release: 0.35,
+          },
+          { ...fm, effects: [box('fx.reverb', { wet: 0.2 })] },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'FM glock',
+          {
+            ratio: ratio(7),
+            amount: 0.5,
+            modDecay: 0.15,
+            modSustain: 0,
+            decay: 0.8,
+            sustain: 0,
+            release: 0.6,
+            transpose: 12,
+          },
+          { ...fm, effects: [box('fx.reverb', { wet: 0.25 })] },
+        ),
+      ),
+      entry(
+        bass,
+        preset(
+          'FM bass',
+          {
+            ratio: ratio(1),
+            amount: 0.6,
+            modDecay: 0.18,
+            modSustain: 0.25,
+            feedback: 0.35,
+            decay: 0.3,
+            sustain: 0.7,
+            release: 0.08,
+            transpose: -12,
+            level: 0.85,
+          },
+          fm,
         ),
       ),
       entry(

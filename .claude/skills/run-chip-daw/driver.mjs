@@ -387,6 +387,17 @@ async function smoke(c) {
   check(arpLevel > 0.02, `notes play through the arpeggiator (meter ${arpLevel.toFixed(3)})`);
   for (const name of ['Arpeggiator', 'Filter', 'Reverb']) await c.click(['button', 'Remove', name]);
   check((await chain()) === 'synth.chip', 'boxes can be removed');
+  // Other synth engines: the synth's type menu swaps it.
+  await c.select(['Chip', 'type', '|', 'FM']);
+  check((await chain()) === 'synth.fm', `the synth can be swapped for FM (${await chain()})`);
+  await c['click-at'](['.timeline-canvas', '2', '10']); // focus off the menu (keys play again)
+  await c.sleep(['300']);
+  await c.keydown(['KeyA']);
+  const fmLevel = await c['meter-max'](['400']);
+  await c.keyup(['KeyA']);
+  check(fmLevel > 0.02, `the FM synth plays (meter ${fmLevel.toFixed(3)})`);
+  await c.select(['FM', 'type', '|', 'Chip']);
+  check((await chain()) === 'synth.chip', 'and back to Chip');
   await c.sleep(['600']);
 
   // Recording, clip editing and playback (track 3 is selected at this point). The timeline
@@ -795,7 +806,7 @@ async function smoke(c) {
       ]),
     );
   check(
-    (await libraryNames()) === 'Pulse bass, Triangle bass, Triangle bass',
+    (await libraryNames()) === 'FM bass, Pulse bass, Triangle bass, Triangle bass',
     `the track's preset saves into the library (${await libraryNames()})`,
   );
   await c.click(['button', 'Rename', 'preset']);

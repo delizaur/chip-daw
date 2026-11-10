@@ -63,7 +63,11 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 - [ ] Tempo map UI: BPM / meter / subdivision changes; tempo automation (linear ramps)
 
 ## Phase 5: Sounds and polish
-- [ ] More synth engines: Game Boy-style wavetable, FM (Genesis-style), SID-style, possibly a sampler
+Order: the synth engines first (one at a time: FM, Game Boy, SID), then the rest of Phase 4, then the rest of Phase 5.
+- [x] FM synth (Genesis-style, 2 operators), with starter presets
+- [ ] Game Boy-style wavetable synth (preset waves with a morph knob)
+- [ ] SID-style synth (Commodore 64)
+- [ ] Possibly a sampler (needs audio stored in projects and the library)
 - [ ] Visual polish pass on the OP-1-inspired look
 - [ ] PWA: installable, works offline
 - [ ] Performance profiling; move hot DSP to WASM only if needed

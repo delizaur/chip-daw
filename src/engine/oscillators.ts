@@ -45,3 +45,21 @@ export function stepLfsr(register: number, tap: number): number {
   const feedback = (register & 1) ^ ((register >> tap) & 1);
   return (register >> 1) | (feedback << 14);
 }
+
+const SINE_SIZE = 4096;
+/** One sine cycle, plus a guard sample for interpolation. */
+const SINE_TABLE = Float32Array.from({ length: SINE_SIZE + 1 }, (_, i) =>
+  Math.sin((2 * Math.PI * i) / SINE_SIZE),
+);
+
+/**
+ * Sine of a phase in cycles (any real number: it wraps), from a table with linear
+ * interpolation. Cheaper than Math.sin for the many oscillators FM runs per sample.
+ */
+export function sine(phase: number): number {
+  const position = (phase - Math.floor(phase)) * SINE_SIZE;
+  const index = position | 0;
+  const fraction = position - index;
+  const a = SINE_TABLE[index]!;
+  return a + (SINE_TABLE[index + 1]! - a) * fraction;
+}
