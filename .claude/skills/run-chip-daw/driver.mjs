@@ -404,7 +404,15 @@ async function smoke(c) {
   const waveLevel = await c['meter-max'](['400']);
   await c.keyup(['KeyA']);
   check(waveLevel > 0.02, `the Wave synth plays (meter ${waveLevel.toFixed(3)})`);
-  await c.select(['Wave', 'type', '|', 'Chip']);
+  await c.select(['Wave', 'type', '|', 'SID']);
+  check((await chain()) === 'synth.sid', `the synth can be swapped for SID (${await chain()})`);
+  await c['click-at'](['.timeline-canvas', '2', '10']);
+  await c.sleep(['300']);
+  await c.keydown(['KeyA']);
+  const sidLevel = await c['meter-max'](['400']);
+  await c.keyup(['KeyA']);
+  check(sidLevel > 0.02, `the SID synth plays (meter ${sidLevel.toFixed(3)})`);
+  await c.select(['SID', 'type', '|', 'Chip']);
   check((await chain()) === 'synth.chip', 'and back to Chip');
   await c.sleep(['600']);
 
@@ -815,7 +823,7 @@ async function smoke(c) {
     );
   check(
     (await libraryNames()) ===
-      'FM bass, FM slap bass, Pulse bass, Triangle bass, Triangle bass, Wave bass, Wave sine bass',
+      'FM bass, FM slap bass, Pulse bass, SID bass, SID pulse bass, Triangle bass, Triangle bass, Wave bass, Wave sine bass',
     `the track's preset saves into the library (${await libraryNames()})`,
   );
   await c.click(['button', 'Rename', 'preset']);

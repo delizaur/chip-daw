@@ -66,7 +66,7 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 Order: the synth engines first (one at a time: FM, Game Boy, SID), then the rest of Phase 4, then the rest of Phase 5.
 - [x] FM synth (Genesis-style, 2 operators), with starter presets
 - [x] Game Boy-style wavetable synth ("Wave": 8 preset 4-bit waves with a morph knob), with starter presets
-- [ ] SID-style synth (Commodore 64)
+- [x] SID-style synth (Commodore 64: tri/saw/pulse with PWM/noise, ring mod and sync, shared resonant filter), with starter presets
 - [ ] Possibly a sampler (needs audio stored in projects and the library)
 - [ ] Visual polish pass on the OP-1-inspired look
 - [ ] PWA: installable, works offline

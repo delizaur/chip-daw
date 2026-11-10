@@ -6,6 +6,7 @@ import { ChipWave } from './boxes/chip-synth';
 import { ArpMode, ARP_RATES, FilterType, SYNC_DIVISIONS } from './boxes/effects';
 import { FM_RATIOS } from './boxes/fm-synth';
 import { createBox } from './boxes/registry';
+import { SidFilter, SidMod, SidWave } from './boxes/sid-synth';
 import { WAVES } from './boxes/wave-synth';
 import { createId } from './ids';
 import { emptyLibrary, type Library, type LibraryPreset } from './library';
@@ -37,6 +38,7 @@ const fm = { synthType: 'synth.fm' };
 /** Wave synth param value for a preset wave's name. */
 const waveNamed = (name: string) => WAVES.findIndex((w) => w.name === name);
 const wave = { synthType: 'synth.wave' };
+const sid = { synthType: 'synth.sid' };
 
 const division = (label: string) => SYNC_DIVISIONS.findIndex((d) => d.label === label);
 
@@ -355,6 +357,147 @@ export function factoryLibrary(): Library {
               box('fx.delay', { time: division('1/4d'), feedback: 0.35, wet: 0.25 }),
               box('fx.reverb', { size: 0.8, wet: 0.3 }),
             ],
+          },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'SID lead',
+          {
+            wave: SidWave.Pulse,
+            width: 0.4,
+            pwmRate: 3,
+            pwmDepth: 0.6,
+            filter: SidFilter.LowPass,
+            cutoff: 3500,
+            resonance: 0.35,
+            decay: 0.4,
+            sustain: 0.75,
+            release: 0.15,
+          },
+          { ...sid, effects: [box('fx.delay', { time: division('1/8d'), wet: 0.2 })] },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'SID sync lead',
+          {
+            wave: SidWave.Saw,
+            mod: SidMod.Sync,
+            modPitch: 14,
+            filter: SidFilter.LowPass,
+            cutoff: 5000,
+            resonance: 0.2,
+            decay: 0.5,
+            sustain: 0.7,
+            release: 0.12,
+            level: 0.55,
+          },
+          sid,
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'SID chord arp',
+          { wave: SidWave.Pulse, width: 0.3, decay: 0.2, sustain: 0.6, release: 0.05, level: 0.6 },
+          {
+            ...sid,
+            sequencers: [box('seq.arp', { mode: ArpMode.Up, rate: ARP_RATES.indexOf('1/32') })],
+          },
+        ),
+      ),
+      entry(
+        bass,
+        preset(
+          'SID bass',
+          {
+            wave: SidWave.Saw,
+            filter: SidFilter.LowPass,
+            cutoff: 700,
+            resonance: 0.6,
+            decay: 0.25,
+            sustain: 0.6,
+            release: 0.06,
+            transpose: -12,
+            level: 0.9,
+          },
+          sid,
+        ),
+      ),
+      entry(
+        bass,
+        preset(
+          'SID pulse bass',
+          {
+            wave: SidWave.Pulse,
+            width: 0.25,
+            pwmRate: 0.4,
+            pwmDepth: 0.5,
+            decay: 0.3,
+            sustain: 0.7,
+            release: 0.06,
+            transpose: -12,
+            level: 0.8,
+          },
+          sid,
+        ),
+      ),
+      entry(
+        drums,
+        preset(
+          'SID snare',
+          {
+            wave: SidWave.Noise,
+            filter: SidFilter.HighPass,
+            cutoff: 900,
+            resonance: 0.2,
+            decay: 0.15,
+            sustain: 0,
+            release: 0.08,
+            transpose: 12,
+            level: 0.8,
+          },
+          sid,
+        ),
+      ),
+      entry(
+        fx,
+        preset(
+          'SID ring bell',
+          {
+            wave: SidWave.Triangle,
+            mod: SidMod.Ring,
+            modPitch: 19,
+            decay: 1,
+            sustain: 0,
+            release: 0.8,
+            level: 0.7,
+          },
+          { ...sid, effects: [box('fx.reverb', { size: 0.8, wet: 0.3 })] },
+        ),
+      ),
+      entry(
+        fx,
+        preset(
+          'SID sweep',
+          {
+            wave: SidWave.Saw,
+            width: 0.5,
+            filter: SidFilter.BandPass,
+            cutoff: 1500,
+            resonance: 0.8,
+            attack: 0.3,
+            decay: 1,
+            sustain: 0.6,
+            release: 0.6,
+            level: 0.7,
+          },
+          {
+            ...sid,
+            effects: [box('fx.delay', { time: division('1/4d'), feedback: 0.45, wet: 0.3 })],
           },
         ),
       ),

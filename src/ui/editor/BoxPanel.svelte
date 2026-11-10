@@ -136,36 +136,38 @@
 
   {#if descriptor}
     <div class="params">
-      {#each enumParams as param (param.id)}
-        <div class="enum">
-          <span class="param-label"
-            >{#if automation.has(param.id)}<span class="mark" title={AUTOMATED} aria-hidden="true"
-                >●</span
-              >{/if}{param.name}</span
-          >
-          {#if (param.steps?.length ?? 0) > MAX_SEGMENTS}
-            <select
-              class="param-select"
-              aria-label={param.name}
-              value={shown(param)}
-              onchange={(event) =>
-                set(param, Number((event.currentTarget as HTMLSelectElement).value))}
+      <div class="enums">
+        {#each enumParams as param (param.id)}
+          <div class="enum">
+            <span class="param-label"
+              >{#if automation.has(param.id)}<span class="mark" title={AUTOMATED} aria-hidden="true"
+                  >●</span
+                >{/if}{param.name}</span
             >
-              {#each options(param) as option (option.value)}
-                <option value={option.value}>{option.label}</option>
-              {/each}
-            </select>
-          {:else}
-            <Segmented
-              label={param.name}
-              options={options(param)}
-              value={shown(param)}
-              color="var(--c-blue)"
-              onchange={(v) => set(param, v)}
-            />
-          {/if}
-        </div>
-      {/each}
+            {#if (param.steps?.length ?? 0) > MAX_SEGMENTS}
+              <select
+                class="param-select"
+                aria-label={param.name}
+                value={shown(param)}
+                onchange={(event) =>
+                  set(param, Number((event.currentTarget as HTMLSelectElement).value))}
+              >
+                {#each options(param) as option (option.value)}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
+            {:else}
+              <Segmented
+                label={param.name}
+                options={options(param)}
+                value={shown(param)}
+                color="var(--c-blue)"
+                onchange={(v) => set(param, v)}
+              />
+            {/if}
+          </div>
+        {/each}
+      </div>
       <div class="knobs">
         {#each knobParams as param, i (param.id)}
           <Knob
@@ -287,6 +289,13 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+
+  /* Side by side (wrapping), so boxes with several selectors (SID) stay short. */
+  .enums {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
   }
 
   .enum {
