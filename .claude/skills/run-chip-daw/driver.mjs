@@ -604,6 +604,7 @@ async function smoke(c) {
     ['m', 'Metronome'],
     ['o', 'Overdub'],
     ['r', 'Record'],
+    ['l', 'Loop'],
   ]) {
     await c.press([key]);
     const on = await c.attr(['aria-pressed', 'button', name]);
@@ -684,6 +685,40 @@ async function smoke(c) {
   check((await c.meter()) > 0.02, 'the key left of 1 turns the keyboard piano back on');
   await c.keyup(['KeyA']);
   await c.sleep(['400']);
+
+  // Loop: the button shows markers over bars 1-4 on the ruler; dragging the end marker (bar 5,
+  // x = 448) to bar 3 (x = 224) makes a two-bar loop that playback keeps jumping back into.
+  const loopRegion = () => state('chipDaw.session.project.loop');
+  await c.press(['Home']); // also scrolls the timeline back to the start (the x values below)
+  await c.click(['button', 'Loop']);
+  check(
+    (await c.attr(['aria-pressed', 'button', 'Loop'])) === 'true',
+    'the Loop button toggles on',
+  );
+  check(
+    JSON.stringify(await loopRegion()) === '{"startTick":0,"endTick":15360}',
+    'the loop starts as the first four bars',
+  );
+  await c['drag-at'](['.timeline-canvas', '448', '10', '224', '10']);
+  check(
+    JSON.stringify(await loopRegion()) === '{"startTick":0,"endTick":7680}',
+    `dragging the end marker moves the loop end (${JSON.stringify(await loopRegion())})`,
+  );
+  check((await undoTitle()).startsWith('Undo Move loop'), 'a marker drag is one undo step');
+  await c.press(['Space']);
+  await c.sleep(['4500']); // two bars take 4 s at 120 BPM
+  const looped = await pos();
+  await c.press(['Space']);
+  check(
+    looped > 0 && looped < 7680,
+    `playback jumps back to the loop start (${Math.round(looped)})`,
+  );
+  await c.screenshot(['5-loop']);
+  await c.click(['button', 'Loop']);
+  check(
+    (await c.attr(['aria-pressed', 'button', 'Loop'])) === 'false',
+    'the Loop button toggles off',
+  );
 
   // Files: export, start a new project, import it back; autosave survives a reload.
   await c['export-file'](['tmp/run-chip-daw/smoke.chip']);
@@ -771,7 +806,7 @@ async function smoke(c) {
   check((await c['meter-max'](['300'])) === 0, "selecting 'MIDI off' ignores the keyboard");
 
   await c.theme(['light']);
-  await c.screenshot(['5-light']);
+  await c.screenshot(['6-light']);
 
   const errors = await c.errors();
   check(errors === 'none', `no console errors (${errors})`);

@@ -66,6 +66,7 @@
       r: whenPianoOff(() => session.toggleRecord()),
       o: whenPianoOff(() => session.toggleOverdub()),
       m: whenPianoOff(() => session.toggleMetronome()),
+      l: whenPianoOff(() => session.toggleLoop()),
       a: whenPianoOff(() => session.jumpToClipEdge(-1)),
       d: whenPianoOff(() => session.jumpToClipEdge(1)),
       enter,

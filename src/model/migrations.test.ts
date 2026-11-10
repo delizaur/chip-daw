@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PPQ } from './constants';
 import { createProject } from './defaults';
 import { migrateProject, ProjectFormatError } from './migrations';
 
@@ -28,6 +29,19 @@ describe('migrateProject', () => {
       unknown
     >;
     expect(result).toEqual({ formatVersion: 3, a: 'added in v2', b: 'added in v2, then v3' });
+  });
+
+  it('format 2 → 3 adds a loop over the first four bars of the meter', () => {
+    const { loop: _loop, ...v2 } = { ...createProject(), formatVersion: 2 };
+    expect(migrateProject(v2).loop).toEqual({ startTick: 0, endTick: 16 * PPQ });
+    const waltz = {
+      ...v2,
+      tempoMap: {
+        ...v2.tempoMap,
+        meters: [{ tick: 0, numerator: 3, denominator: 4, subdivision: 16 }],
+      },
+    };
+    expect(migrateProject(waltz).loop).toEqual({ startTick: 0, endTick: 12 * PPQ });
   });
 
   it('fails clearly when a migration step is missing', () => {

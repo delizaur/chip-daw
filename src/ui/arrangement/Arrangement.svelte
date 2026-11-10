@@ -2,7 +2,8 @@
   Center area: track headers (DOM) and the timeline (canvas) with ruler, clips and playhead.
 
   Timeline mouse/touch:
-    ruler           click or drag to move the playhead
+    ruler           click or drag to move the playhead; with the loop on, drag its start and
+                    end markers (snapped to the grid; Alt: free)
     clip            click to select (Shift: add/remove), drag to move (also to other tracks),
                     drag an edge to resize, double-click to open it in the piano roll;
                     Alt while dragging disables snapping
@@ -12,7 +13,7 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { moveClips, resizeClip } from '../../model/commands';
+  import { moveClips, resizeClip, setLoopRegion } from '../../model/commands';
   import { PPQ } from '../../model/constants';
   import { floorTo, snapTick, ticksPerBar } from '../../model/time';
   import type { Clip, Tick } from '../../model/types';
@@ -25,6 +26,7 @@
     hitTest,
     LANE_HEIGHT,
     laneAt,
+    loopMarkerAt,
     RULER_HEIGHT,
     tickToX,
     xToTick,
@@ -44,11 +46,14 @@
 
   const tracks = $derived(session.project.tracks);
   const presetNames = $derived(new Map(session.project.presets.map((p) => [p.id, p.name])));
+  /** The loop region while looping is on (null hides the markers). */
+  const loop = $derived(session.loopEnabled ? session.project.loop : null);
   const meter = $derived(session.project.tempoMap.meters[0]!);
   const height = $derived(RULER_HEIGHT + tracks.length * LANE_HEIGHT);
 
   type Drag =
     | { kind: 'seek' }
+    | { kind: 'loop'; edge: 'start' | 'end' }
     | {
         kind: 'move';
         ids: ReadonlySet<string>;
@@ -119,6 +124,7 @@
       playhead: session.playheadAt(),
       take: takePreview(),
       ghosts,
+      loop,
       presetNames,
       font: getComputedStyle(canvas).getPropertyValue('--font-ui') || 'sans-serif',
     });
@@ -146,6 +152,7 @@
       ghosts,
       themeVersion,
       presetNames,
+      loop,
       session.selectedTrackIndex,
       session.selectedClipIds,
       session.position,
@@ -229,8 +236,12 @@
     const { x, y } = point(event);
     const hit = hitTest(tracks, view, x, y);
     canvas.setPointerCapture(event.pointerId);
+    const marker = loop ? loopMarkerAt(view, loop, x, y) : null;
 
-    if (hit.kind === 'ruler') {
+    if (marker) {
+      session.begin('Move loop');
+      drag = { kind: 'loop', edge: marker };
+    } else if (hit.kind === 'ruler') {
       session.seek(snap(hit.tick, event));
       drag = { kind: 'seek' };
     } else if (hit.kind === 'clip') {
@@ -278,18 +289,28 @@
     if (!drag) {
       const hit = hitTest(tracks, view, x, y);
       canvas.style.cursor =
-        hit.kind === 'clip'
-          ? hit.edge
-            ? 'ew-resize'
-            : 'grab'
-          : hit.kind === 'ruler'
-            ? 'pointer'
-            : '';
+        loop && loopMarkerAt(view, loop, x, y)
+          ? 'ew-resize'
+          : hit.kind === 'clip'
+            ? hit.edge
+              ? 'ew-resize'
+              : 'grab'
+            : hit.kind === 'ruler'
+              ? 'pointer'
+              : '';
       return;
     }
 
     if (drag.kind === 'seek') {
       session.seek(snap(xToTick(view, x), event));
+    } else if (drag.kind === 'loop') {
+      const tick = snap(xToTick(view, x), event);
+      const { startTick, endTick } = session.project.loop;
+      session.run(
+        drag.edge === 'start'
+          ? setLoopRegion(tick, endTick, 'end')
+          : setLoopRegion(startTick, tick, 'start'),
+      );
     } else if (drag.kind === 'move') {
       if (!drag.started && Math.hypot(x - drag.startX, y - drag.startY) < 4) return;
       drag.started = true;
@@ -344,7 +365,9 @@
     drag = null;
     ghosts = null;
     if (canvas) canvas.style.cursor = '';
-    if (finished?.kind === 'move' && finished.started) {
+    if (finished?.kind === 'loop') {
+      session.commit();
+    } else if (finished?.kind === 'move' && finished.started) {
       if (finished.deltaTicks !== 0 || finished.deltaTracks !== 0) {
         session.run(moveClips(finished.ids, finished.deltaTicks, finished.deltaTracks));
       }

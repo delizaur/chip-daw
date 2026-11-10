@@ -1,11 +1,13 @@
 import { PPQ } from '../../model/constants';
 import { ticksPerBar, ticksPerBeat } from '../../model/time';
-import type { Clip, MeterEvent, Tick, Track } from '../../model/types';
+import type { Clip, LoopRegion, MeterEvent, Tick, Track } from '../../model/types';
 
 export const RULER_HEIGHT = 24;
 export const LANE_HEIGHT = 56;
 /** Pointer distance from a clip edge that grabs the edge (for resizing). */
 export const EDGE_GRAB_PX = 6;
+/** Pointer distance from a loop marker (on the ruler) that grabs it. */
+export const LOOP_GRAB_PX = 8;
 
 export const MIN_PIXELS_PER_TICK = 2 / PPQ;
 export const MAX_PIXELS_PER_TICK = 256 / PPQ;
@@ -65,6 +67,27 @@ export function hitTest(
     return { kind: 'clip', trackIndex: lane, clip, edge, tick };
   }
   return { kind: 'lane', trackIndex: lane, tick };
+}
+
+/**
+ * The loop marker under a point on the ruler, if any. When both are in reach (a short loop,
+ * zoomed out), the nearer one wins; on a tie, the end when right of the middle.
+ */
+export function loopMarkerAt(
+  view: TimelineView,
+  loop: LoopRegion,
+  x: number,
+  y: number,
+): 'start' | 'end' | null {
+  if (y >= RULER_HEIGHT) return null;
+  const toStart = Math.abs(x - tickToX(view, loop.startTick));
+  const toEnd = Math.abs(x - tickToX(view, loop.endTick));
+  if (Math.min(toStart, toEnd) > LOOP_GRAB_PX) return null;
+  if (toStart === toEnd) {
+    const middle = (tickToX(view, loop.startTick) + tickToX(view, loop.endTick)) / 2;
+    return x > middle ? 'end' : 'start';
+  }
+  return toStart < toEnd ? 'start' : 'end';
 }
 
 /** New zoom, keeping the tick under `anchorX` in place. */

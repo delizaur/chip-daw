@@ -43,6 +43,11 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 - [x] Preset editor shows the clip preset when a clip is selected: header with "used by N clips", Make unique, Use track preset, Load to track
 - [x] Clip preset names on the timeline
 
+## Phase 3E: Loop ✅
+- [x] Loop button in the top bar (yellow when on); loop region saved with the project (format 3), first four bars by default
+- [x] Start/end markers on the ruler with lines down through all tracks, dragged to set the loop (snapped, undoable)
+- [x] Sample-accurate loop playback; recording makes one pass per time around (layered with overdub)
+
 ## Phase 3D: Workflow ✅
 - [x] 4-beat count-in (with clicks and a big countdown) before recording from a stop
 - [x] The key left of 1 turns the computer keyboard piano off; its letter keys become shortcuts: R record, O overdub, M metronome, arrows select clips, A/D jump between clip edges, Enter opens the piano roll, U/P/T clip preset buttons

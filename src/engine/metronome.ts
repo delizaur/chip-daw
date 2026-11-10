@@ -14,17 +14,18 @@ export class Metronome {
   }
 
   /**
-   * Adds the click to the mix. `triggerOffset` is the sample where a beat starts in this block
-   * (-1 for none); `accent` marks a downbeat.
+   * Adds the click to samples `start`..`start + count` of the mix. `triggerOffset` is the sample
+   * (in the same buffer) where a beat starts (-1 for none); `accent` marks a downbeat.
    */
   process(
     left: Float32Array,
     right: Float32Array,
-    frames: number,
+    start: number,
+    count: number,
     triggerOffset: number,
     accent: boolean,
   ) {
-    for (let i = 0; i < frames; i++) {
+    for (let i = start; i < start + count; i++) {
       if (i === triggerOffset) {
         this.#phase = 0;
         this.#frequency = accent ? 1760 : 1320;

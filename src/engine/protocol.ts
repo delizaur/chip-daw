@@ -32,6 +32,8 @@ export type UiToEngine =
   /** Overdub mode: while recording, live notes play through the clip under the playhead. */
   | { type: 'setOverdub'; enabled: boolean }
   | { type: 'setMetronome'; enabled: boolean }
+  /** Loop on/off: while on, playback reaching the loop end jumps back to the loop start. */
+  | { type: 'setLoop'; enabled: boolean }
   /** Output latency in seconds, so recorded notes line up with what the player heard. */
   | { type: 'setLatency'; seconds: number };
 
@@ -74,4 +76,5 @@ export const QUEUED_MESSAGE_TYPES: ReadonlySet<UiToEngine['type']> = new Set([
   'setRecord',
   'setOverdub',
   'setMetronome',
+  'setLoop',
 ]);

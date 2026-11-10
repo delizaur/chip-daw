@@ -1,5 +1,5 @@
 import { ticksPerBar, ticksPerBeat } from '../../model/time';
-import type { Clip, MeterEvent, Tick, Track } from '../../model/types';
+import type { Clip, LoopRegion, MeterEvent, Tick, Track } from '../../model/types';
 import { colorResolver, roundRect, type ColorResolver } from '../canvas';
 import { trackColor } from '../theme';
 import { LANE_HEIGHT, laneTop, RULER_HEIGHT, tickToX, type TimelineView } from './geometry';
@@ -29,6 +29,8 @@ export interface TimelineScene {
   take: TakePreview | null;
   /** Clips being dragged: drawn at their new place, originals dimmed. */
   ghosts: ClipGhost[] | null;
+  /** The loop region while looping is on (markers on the ruler, lines down the tracks). */
+  loop: LoopRegion | null;
   /** Font family for labels. */
   font: string;
 }
@@ -160,6 +162,44 @@ function drawTake(
   }
 }
 
+/**
+ * Loop markers: a band on the ruler between them, a flag on each (pointing into the loop) that
+ * can be dragged, and lines down through every track.
+ */
+function drawLoop(
+  ctx: CanvasRenderingContext2D,
+  scene: TimelineScene,
+  loop: LoopRegion,
+  color: ColorResolver,
+) {
+  const { view, width, height } = scene;
+  const x1 = Math.round(tickToX(view, loop.startTick));
+  const x2 = Math.round(tickToX(view, loop.endTick));
+  if (x2 < -10 || x1 > width + 10) return;
+  const yellow = color('var(--c-yellow)');
+  ctx.save();
+  ctx.fillStyle = yellow;
+  ctx.globalAlpha = 0.25;
+  ctx.fillRect(x1, 0, x2 - x1, RULER_HEIGHT - 1);
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(x1 - 0.75, 0, 1.5, height);
+  ctx.fillRect(x2 - 0.75, 0, 1.5, height);
+  ctx.globalAlpha = 1;
+  // Small enough to leave the bar numbers (vertically centred in the ruler) readable.
+  for (const [x, inward] of [
+    [x1, 1],
+    [x2, -1],
+  ] as const) {
+    ctx.beginPath();
+    ctx.moveTo(x - inward * 0.75, 0);
+    ctx.lineTo(x + inward * 8, 0);
+    ctx.lineTo(x - inward * 0.75, 7);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export function drawTimeline(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -182,6 +222,16 @@ export function drawTimeline(
     ctx.fillStyle = color('var(--screen-line)');
     ctx.fillRect(0, laneTop(i + 1) - 1, width, 1);
   });
+
+  // Loop region: a faint tint behind the clips.
+  if (scene.loop) {
+    const x1 = tickToX(view, scene.loop.startTick);
+    const x2 = tickToX(view, scene.loop.endTick);
+    ctx.fillStyle = color('var(--c-yellow)');
+    ctx.globalAlpha = 0.06;
+    ctx.fillRect(x1, RULER_HEIGHT, x2 - x1, height - RULER_HEIGHT);
+    ctx.globalAlpha = 1;
+  }
 
   // Grid: bars always, beats when there's room.
   const bar = ticksPerBar(meter);
@@ -224,6 +274,7 @@ export function drawTimeline(
   }
 
   if (scene.take) drawTake(ctx, scene, scene.take, color);
+  if (scene.loop) drawLoop(ctx, scene, scene.loop, color);
 
   // Playhead.
   const px = Math.round(tickToX(view, scene.playhead)) + 0.5;

@@ -9,12 +9,23 @@ export interface Project {
   masterVolume: number;
   tempoMap: TempoMap;
   /**
+   * The loop region (whether looping is on is transport state, not saved). Saved with the song
+   * so the region you set up comes back.
+   */
+  loop: LoopRegion;
+  /**
    * Every preset a track or clip uses, and no others. Tracks and clips point at them by id, so
    * one preset can be shared (see design-principles.md, "Terminology").
    */
   presets: Preset[];
   /** Length is DEFAULT_TRACK_COUNT for new projects; never assume a fixed size. */
   tracks: Track[];
+}
+
+export interface LoopRegion {
+  startTick: Tick;
+  /** Always after startTick. */
+  endTick: Tick;
 }
 
 export interface TempoEvent {

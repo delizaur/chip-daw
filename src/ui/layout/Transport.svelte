@@ -68,6 +68,14 @@
     pressed={session.metronome}
     onchange={() => session.toggleMetronome()}>♩</Toggle
   >
+  <Toggle
+    size="small"
+    label="Loop"
+    title="Loop (L with the keyboard piano off): drag its markers on the ruler to set it"
+    color="var(--c-yellow)"
+    pressed={session.loopEnabled}
+    onchange={() => session.toggleLoop()}>LOOP</Toggle
+  >
 
   <label class="tempo" title="Tempo (BPM)">
     <input

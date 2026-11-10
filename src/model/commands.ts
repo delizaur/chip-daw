@@ -2,6 +2,7 @@ import type { Draft } from 'immer';
 import { constrainParam, getParamDescriptor } from './boxes/registry';
 import { absoluteNotes, clipEnd, createClip, placeClip, setClipStart } from './clips';
 import type { Command } from './history';
+import { PPQ } from './constants';
 import { createId } from './ids';
 import { editPreset, ensurePreset, prunePresets, type PresetTarget } from './presets';
 import type { BoxInstance, Clip, Note, Preset, Project, Tick, Track } from './types';
@@ -97,6 +98,36 @@ export function setTempo(bpm: number): ProjectCommand {
       const value = Math.round(Math.min(MAX_BPM, Math.max(MIN_BPM, bpm)) * 100) / 100;
       if (first) first.bpm = value;
       else project.tempoMap.tempos.push({ tick: 0, bpm: value, ramp: 'step' });
+    },
+  };
+}
+
+// --- Loop --------------------------------------------------------------------------------
+
+/** Shortest loop the markers can make (a sixteenth). */
+export const MIN_LOOP_TICKS = PPQ / 4;
+
+/**
+ * Sets the loop region. Pass the edge that moved (`fixed` = the other one stays put), so the
+ * moving edge is the one kept at least MIN_LOOP_TICKS away; the start never goes before 0.
+ */
+export function setLoopRegion(
+  startTick: Tick,
+  endTick: Tick,
+  fixed: 'start' | 'end' = 'start',
+): ProjectCommand {
+  return {
+    label: 'Move loop',
+    recipe: (project) => {
+      let start = Math.max(0, Math.round(startTick));
+      let end = Math.round(endTick);
+      if (end - start < MIN_LOOP_TICKS) {
+        if (fixed === 'start') end = start + MIN_LOOP_TICKS;
+        else start = Math.max(0, end - MIN_LOOP_TICKS);
+        end = Math.max(end, start + MIN_LOOP_TICKS);
+      }
+      if (project.loop.startTick !== start) project.loop.startTick = start;
+      if (project.loop.endTick !== end) project.loop.endTick = end;
     },
   };
 }

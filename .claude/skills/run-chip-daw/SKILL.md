@@ -47,11 +47,12 @@ and the notes play back; the key left of 1 turns the keyboard piano off (letters
 nothing), R/O/M toggle record/overdub/metronome, arrows select the closest/next/previous/lower/upper
 clip, A/D walk the playhead along clip edges (selecting the clip at a shared edge), Enter opens the
 piano roll, U/P/T run the clip preset buttons (T explains when there's nothing to load), and the
-key turns the piano back on; Export → New → Import round-trips the project and names it after the
+key turns the piano back on; the Loop button shows the default four-bar loop, dragging its end marker
+makes a two-bar loop (one undo step) and playback jumps back into it; Export → New → Import round-trips the project and names it after the
 file; a reload restores the autosave; a starter preset loads onto a track (undoably), saves back into
 the library, renames, exports as `.chippreset`, deletes and re-imports; the song exports as WAV; MIDI can be enabled and a fake MIDI keyboard's note plays,
 lights the MIDI activity light and stops on note-off, and is ignored with 'MIDI off'; and no
-console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-light`) land in
+console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-loop`, `6-light`) land in
 `tmp/run-chip-daw/` (gitignored). **Look at them.**
 
 Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
@@ -211,6 +212,10 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   `*-at` commands with the coordinates above, then check results through `eval chipDaw.session…`.
 - **Clicking an empty lane moves the playhead when stopped.** It's how you place the paste
   position (`click-at canvas 2 10` on the ruler also works). Paste goes to the selected track.
+- **Loop markers are on the ruler** (y < 24) and only while the loop is on (button `Loop`). At the
+  default zoom the default loop's end marker is at x = 448 (bar 5); `drag-at .timeline-canvas 448
+  10 224 10` moves it to bar 3. Read the region with `eval chipDaw.session.project.loop` and the
+  toggle with `eval chipDaw.session.loopEnabled`.
 - **Recording from a stop counts in 4 beats first** (2 s at 120 BPM): after Record + Play, wait
   ~2.1 s before playing notes (`chipDaw.session.countIn` is the beats left; `.count-in` shows it).
   Arm Record while already playing to punch in without a count-in.

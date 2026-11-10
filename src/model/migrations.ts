@@ -1,4 +1,4 @@
-import { PROJECT_FORMAT_VERSION } from './constants';
+import { DEFAULT_LOOP_BARS, PPQ, PROJECT_FORMAT_VERSION } from './constants';
 import { createId } from './ids';
 import type { Project } from './types';
 
@@ -56,12 +56,24 @@ function presetsByReference(project: Json): Json {
   return { ...project, presets, tracks };
 }
 
+/** Format 2 → 3 (loop): adds the loop region, the first four bars of the song's meter. */
+function addLoopRegion(project: Json): Json {
+  const tempoMap = isObject(project.tempoMap) ? project.tempoMap : {};
+  const meter =
+    Array.isArray(tempoMap.meters) && isObject(tempoMap.meters[0]) ? tempoMap.meters[0] : {};
+  const numerator = typeof meter.numerator === 'number' ? meter.numerator : 4;
+  const denominator = typeof meter.denominator === 'number' ? meter.denominator : 4;
+  const bar = numerator * ((4 * PPQ) / denominator);
+  return { ...project, loop: { startTick: 0, endTick: DEFAULT_LOOP_BARS * bar } };
+}
+
 /**
  * `migrations[n]` upgrades a project from format version n to n + 1.
  * When bumping PROJECT_FORMAT_VERSION, add an entry here and a test with an old fixture.
  */
 const migrations: Record<number, Migration> = {
   1: presetsByReference,
+  2: addLoopRegion,
 };
 
 export class ProjectFormatError extends Error {}

@@ -13,6 +13,8 @@ enablePatches();
 
 /** How often meters and the transport position are reported to the UI. */
 const REPORT_RATE_HZ = 30;
+/** Most loop jumps handled in one block (a guard; even the shortest loop is ~1800 samples). */
+const MAX_WRAPS_PER_BLOCK = 8;
 /** Beats counted in (with clicks) before recording starts from a stop. */
 export const COUNT_IN_BEATS = 4;
 /**
@@ -23,6 +25,8 @@ const EARLY_NOTE_TICKS = PPQ / 4;
 
 interface Take {
   startTick: Tick;
+  /** Started by the loop jumping back: notes can't start before it (they'd belong to the last pass). */
+  looped?: boolean;
   notes: RecordedNote[];
   /** "trackId:pitch" → index in `notes` of the note still held. */
   held: Map<string, number>;
@@ -52,6 +56,7 @@ export class Engine {
   #position: Tick = 0;
   #recordArmed = false;
   #overdub = false;
+  #loopEnabled = false;
   #latencySeconds = 0;
   #take: Take | null = null;
   /** `seq` of the last seek message handled (echoed in transport reports). */
@@ -174,6 +179,9 @@ export class Engine {
       case 'setMetronome':
         this.#metronome.enabled = message.enabled;
         break;
+      case 'setLoop':
+        this.#loopEnabled = message.enabled;
+        break;
       case 'setLatency':
         this.#latencySeconds = Math.max(0, message.seconds);
         break;
@@ -276,7 +284,11 @@ export class Engine {
     const take = this.#take;
     if (!take) return;
     const key = `${trackId}:${pitch}`;
-    const tick = this.#heardPosition();
+    // In a pass started by the loop, a note heard before its start belongs to the last pass's
+    // end; it's recorded at this pass's start instead of stretching the clip before the loop.
+    const tick = take.looped
+      ? Math.max(take.startTick, this.#heardPosition())
+      : this.#heardPosition();
     const previous = take.held.get(key);
     if (previous !== undefined) {
       take.notes[previous]!.endTick = tick;
@@ -342,23 +354,61 @@ export class Engine {
       }
     }
 
-    let window: PlayWindow | null = null;
-    if (this.#playing) {
-      // `lead`: the part of this block still counting in, before the song position.
-      window = this.#window;
-      window.ticksPerSample = ticksPerSample;
-      window.start = this.#position - lead;
-      window.end = window.start + blockTicks;
-    }
     const context = this.#context;
     context.bpm = bpm;
     context.ticksPerSample = ticksPerSample;
     context.playing = this.#playing;
-    context.clockTick = window ? window.start : this.#freeTick;
-    if (!this.#playing) this.#freeTick += ticksPerSample * frames;
 
-    for (const track of this.#tracks) track.process(mixLeft, mixRight, frames, window, context);
-    this.#processMetronome(mixLeft, mixRight, frames, window, countInClick, countInAccent);
+    if (!this.#playing) {
+      context.clockTick = this.#freeTick;
+      this.#freeTick += blockTicks;
+      for (const track of this.#tracks) track.process(mixLeft, mixRight, 0, frames, null, context);
+      this.#metronome.process(mixLeft, mixRight, 0, frames, countInClick, countInAccent);
+    } else {
+      // Playing: the block is rendered in segments, split where the loop jumps back. `lead` is
+      // the part of this block still counting in, before the song position.
+      const window = this.#window;
+      window.ticksPerSample = ticksPerSample;
+      let start = this.#position - lead;
+      let offset = 0;
+      for (let wraps = 0; offset < frames;) {
+        let count = frames - offset;
+        let end = start + count * ticksPerSample;
+        const loop = this.#project?.loop;
+        const wrap =
+          !!loop &&
+          this.#loopEnabled &&
+          wraps < MAX_WRAPS_PER_BLOCK &&
+          start < loop.endTick &&
+          end >= loop.endTick &&
+          loop.endTick > loop.startTick;
+        if (wrap) {
+          count = Math.min(count, Math.max(0, Math.round((loop.endTick - start) / ticksPerSample)));
+          end = loop.endTick;
+        }
+        if (count > 0) {
+          window.start = start;
+          window.end = end;
+          context.clockTick = start;
+          for (const track of this.#tracks) {
+            track.process(mixLeft, mixRight, offset, count, window, context);
+          }
+          // The count-in's last click can only fall in the first segment.
+          const click = offset === 0 ? countInClick : -1;
+          this.#processMetronome(mixLeft, mixRight, offset, count, window, click, countInAccent);
+        }
+        offset += count;
+        if (wrap) {
+          wraps++;
+          this.#position = loop.endTick;
+          this.#loopBack(loop.startTick);
+          start = loop.startTick;
+        } else {
+          start = end;
+        }
+      }
+      this.#position = start;
+    }
 
     let peak = this.#masterPeak;
     for (let i = 0; i < frames; i++) {
@@ -371,35 +421,55 @@ export class Engine {
       if (magnitude > peak) peak = magnitude;
     }
     this.#masterPeak = peak;
-    if (window) this.#position = window.end;
 
     this.#framesSinceReport += frames;
     if (this.#framesSinceReport >= this.#reportInterval) this.#report();
   }
 
+  /**
+   * Metronome for samples `start`..`start + count`, which play `window`. `countInClick` is a
+   * count-in click's sample in the block (-1 for none); it wins over a beat in the same span.
+   */
   #processMetronome(
     left: Float32Array,
     right: Float32Array,
-    frames: number,
-    window: PlayWindow | null,
+    start: number,
+    count: number,
+    window: PlayWindow,
     countInClick: number,
     countInAccent: boolean,
   ) {
     let offset = countInClick;
     let accent = countInAccent;
-    if (offset < 0 && window && this.#metronome.enabled && this.#project) {
+    if (offset < 0 && this.#metronome.enabled && this.#project) {
       const meter = this.#project.tempoMap.meters[0]!;
       const beat = ticksPerBeat(meter);
       const nextBeat = Math.ceil(window.start / beat - 1e-9) * beat;
       if (nextBeat < window.end) {
-        offset = Math.min(
-          frames - 1,
-          Math.floor((nextBeat - window.start) / window.ticksPerSample),
-        );
+        offset =
+          start +
+          Math.min(count - 1, Math.floor((nextBeat - window.start) / window.ticksPerSample));
         accent = Math.round(nextBeat) % ticksPerBar(meter) === 0;
       }
     }
-    this.#metronome.process(left, right, frames, offset, accent);
+    this.#metronome.process(left, right, start, count, offset, accent);
+  }
+
+  /**
+   * The loop end was reached (the position is there): jump back to `tick`. Notes still sounding
+   * are released; a recording pass ends here and a new one starts at the loop start, so each
+   * time around is its own pass (with overdub they layer up; without, the last one played
+   * replaces the others).
+   */
+  #loopBack(tick: Tick): void {
+    const recording = !!this.#take;
+    this.#endTake();
+    this.#position = tick;
+    for (const track of this.#tracks) track.locate(tick);
+    if (recording) {
+      this.#updateTake();
+      if (this.#take) this.#take.looped = true;
+    }
   }
 
   #report(): void {

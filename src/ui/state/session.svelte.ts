@@ -178,6 +178,8 @@ class Session {
   recordArmed = $state(false);
   overdub = $state(false);
   metronome = $state(false);
+  /** Loop on: playback jumps from the loop end (project.loop) back to its start. */
+  loopEnabled = $state(false);
   /** Last position reported by (or sent to) the engine. See `playheadAt` for a smooth value. */
   position = $state<Tick>(0);
   #positionTime = 0;
@@ -380,7 +382,7 @@ class Session {
     this.showNotice(
       this.keyboardPiano
         ? 'Computer keyboard plays notes.'
-        : 'Computer keyboard shortcuts: R record, O overdub, M metronome, arrows select clips, A/D clip edges, Enter piano roll, U/P/T clip preset buttons.',
+        : 'Computer keyboard shortcuts: R record, O overdub, M metronome, L loop, arrows select clips, A/D clip edges, Enter piano roll, U/P/T clip preset buttons.',
     );
   }
 
@@ -408,7 +410,13 @@ class Session {
   playheadAt(now: number = performance.now()): Tick {
     if (!this.playing) return this.position;
     const bpm = bpmAt(this.project.tempoMap, this.position);
-    return this.position + ((now - this.#positionTime) / 1000) * ticksPerSecond(bpm);
+    const tick = this.position + ((now - this.#positionTime) / 1000) * ticksPerSecond(bpm);
+    // Between reports, wrap around the loop like the engine does.
+    const { startTick, endTick } = this.project.loop;
+    if (this.loopEnabled && this.position < endTick && tick >= endTick) {
+      return startTick + ((tick - endTick) % (endTick - startTick));
+    }
+    return tick;
   }
 
   #setPosition(tick: Tick): void {
@@ -459,6 +467,11 @@ class Session {
   toggleMetronome(): void {
     this.metronome = !this.metronome;
     this.#engine.send({ type: 'setMetronome', enabled: this.metronome });
+  }
+
+  toggleLoop(): void {
+    this.loopEnabled = !this.loopEnabled;
+    this.#engine.send({ type: 'setLoop', enabled: this.loopEnabled });
   }
 
   // --- Clips ------------------------------------------------------------------------------
@@ -942,6 +955,7 @@ class Session {
       await this.#engine.start(() => [
         { type: 'loadProject', project: this.#history.state },
         { type: 'setMetronome', enabled: this.metronome },
+        { type: 'setLoop', enabled: this.loopEnabled },
         { type: 'setRecord', armed: this.recordArmed },
         { type: 'setOverdub', enabled: this.overdub },
         { type: 'seek', tick: this.position, seq: ++this.#seekSeq },

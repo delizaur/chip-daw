@@ -79,6 +79,14 @@ export function validateProject(value: unknown): Project {
     }
   });
 
+  if (!isObject(value.loop)) fail('loop', 'a loop region');
+  requireNumber(value.loop.startTick, 'loop.startTick');
+  requireNumber(value.loop.endTick, 'loop.endTick');
+  const loop = value.loop as { startTick: number; endTick: number };
+  if (loop.startTick < 0 || loop.endTick <= loop.startTick) {
+    fail('loop', 'a region with its end after its start');
+  }
+
   const presetIds = new Set<string>();
   requireArray(value.presets, 'presets').forEach((preset, p) => {
     const { id } = checkPreset(preset, `presets[${p}]`);

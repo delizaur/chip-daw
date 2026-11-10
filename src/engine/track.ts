@@ -386,12 +386,15 @@ export class TrackRuntime {
   }
 
   /**
-   * Renders the track and adds it, with its gain, to the mix buffers. `window` is null when
-   * the transport is stopped (only live notes play).
+   * Renders `frames` samples of the track and adds them, with its gain, to the mix buffers from
+   * sample `offset` on (a block can be split, e.g. where the loop jumps back). `window` is the
+   * part of the song those samples cover, or null when the transport is stopped (only live
+   * notes play).
    */
   process(
     mixLeft: Float32Array,
     mixRight: Float32Array,
+    offset: number,
     frames: number,
     window: PlayWindow | null,
     context: BlockContext,
@@ -413,8 +416,8 @@ export class TrackRuntime {
     const gain = this.#gain;
     for (let i = 0; i < frames; i++) {
       const g = gain.next();
-      mixLeft[i]! += left[i]! * g;
-      mixRight[i]! += right[i]! * g;
+      mixLeft[offset + i]! += left[i]! * g;
+      mixRight[offset + i]! += right[i]! * g;
     }
   }
 

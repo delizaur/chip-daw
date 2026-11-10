@@ -51,6 +51,7 @@ Sequencers, synths and effects are represented as "boxes", that can be freely sw
 
   * Play/pause button.
   * Record (with overdub mode).
+  * Loop: a toggle that turns yellow when on; the loop's start and end markers sit on the ruler (the bar numbers) and extend as lines down through all tracks. It starts as the first four bars; drag the markers to change it.
   * Tempo value in BPM, meter and subdivision. Songs can have BPM, meter and subdivision changes. Tempo can be automated.
   * Global app volume.
   * MIDI input selector.
