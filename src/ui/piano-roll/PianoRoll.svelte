@@ -7,24 +7,40 @@
                       pitch); drag its right edge to change length; double-click to delete
     Shift+drag        select a rectangle of notes
     keys              click to hear a pitch
-    velocity lane     click or drag across stems to set velocities
+    bottom lane       Velocity: click or drag across stems to set velocities.
+                      Automation (pick a param in the Lane menu): click to add a point, drag a
+                      point to move it, double-click it to delete
     ruler             click to move the playhead
     wheel             scroll pitches; Shift+wheel scrolls time; Ctrl/Cmd+wheel zooms
   Alt while dragging disables snapping. Arrow keys (via the app keymap) transpose / move.
 -->
 <script lang="ts">
+  import {
+    boxesInOrder,
+    defaultCurve,
+    findLane,
+    laneParam,
+    resolveTarget,
+    targetFor,
+  } from '../../model/automation';
+  import { deleteLane, setLanePoints } from '../../model/automation-commands';
+  import { getBoxDescriptor, getParamDescriptor, paramValue } from '../../model/boxes/registry';
+  import type { ParamDescriptor } from '../../model/boxes/types';
   import { PPQ } from '../../model/constants';
   import { createId } from '../../model/ids';
+  import { findPresetById } from '../../model/presets';
   import { addNotes, quantizeNotes, updateNotes, type NoteChange } from '../../model/note-commands';
   import { floorTo, snapTick } from '../../model/time';
-  import type { Note, Tick } from '../../model/types';
+  import type { AutomationPoint, AutomationTarget, Note, Tick } from '../../model/types';
   import { prepareCanvas } from '../canvas';
   import Segmented from '../controls/Segmented.svelte';
   import { session } from '../state/session.svelte';
   import { trackColor } from '../theme';
-  import { drawPianoRoll } from './draw';
+  import { drawPianoRoll, laneHeightOf, type LaneScene } from './draw';
   import {
     areaAt,
+    automationPointAt,
+    automationValueAtY,
     fitView,
     KEYS_WIDTH,
     MAX_PIXELS_PER_TICK,
@@ -61,6 +77,122 @@
   const editing = $derived(session.editing);
   const meter = $derived(session.project.tempoMap.meters[0]!);
 
+  // --- Bottom lane: velocity or automation ---------------------------------------------------
+
+  /** The editing clip's preset (automation lanes link to its boxes). */
+  const preset = $derived(
+    editing ? findPresetById(session.project, editing.clip.presetId) : undefined,
+  );
+
+  /** Box names for the lane menu: "Delay", or "Delay 2" for a second one. */
+  const boxNames = $derived.by(() => {
+    const names: Record<string, string> = {};
+    const seen: Record<string, number> = {};
+    for (const box of preset ? boxesInOrder(preset) : []) {
+      const name = getBoxDescriptor(box.type)?.name ?? box.type;
+      const count = (seen[name] ?? 0) + 1;
+      seen[name] = count;
+      names[box.id] = count > 1 ? `${name} ${count}` : name;
+    }
+    return names;
+  });
+
+  /** Lane menu: each box of the clip's preset with its params; then lanes whose box is gone. */
+  const laneMenu = $derived.by(() => {
+    const clip = editing?.clip;
+    if (!clip || !preset) return { groups: [], unlinked: [] };
+    const groups = boxesInOrder(preset).map((box) => ({
+      label: boxNames[box.id] ?? box.type,
+      options: (getBoxDescriptor(box.type)?.params ?? []).map((param) => ({
+        value: `a:${box.id}:${param.id}`,
+        label: param.name,
+        automated: (findLane(clip, preset, box, param.id)?.points.length ?? 0) > 0,
+      })),
+    }));
+    const unlinked = clip.automation
+      .filter((lane) => !resolveTarget(preset, lane.target))
+      .map((lane) => ({
+        value: `a:${lane.target.boxId}:${lane.paramId}`,
+        label: `${getBoxDescriptor(lane.target.boxType)?.name ?? lane.target.boxType} › ${
+          laneParam(lane)?.name ?? lane.paramId
+        }`,
+      }));
+    return { groups, unlinked };
+  });
+
+  interface ActiveLane {
+    name: string;
+    param: ParamDescriptor;
+    /** The lane's target (its own, if it exists; else for a new lane on the box). */
+    target: AutomationTarget;
+    paramId: string;
+    points: readonly AutomationPoint[];
+    /** The preset's own value. */
+    base: number;
+    inactive: boolean;
+  }
+
+  /** The automation lane shown, or null for velocities. */
+  const activeLane = $derived.by((): ActiveLane | null => {
+    const choice = session.pianoRollLane;
+    const clip = editing?.clip;
+    if (choice.kind !== 'automation' || !clip || !preset) return null;
+    const box = boxesInOrder(preset).find((b) => b.id === choice.boxId);
+    if (box) {
+      const param = getParamDescriptor(box.type, choice.paramId);
+      if (!param) return null;
+      const lane = findLane(clip, preset, box, param.id);
+      return {
+        name: `${boxNames[box.id] ?? box.type} › ${param.name}`,
+        param,
+        target: lane?.target ?? targetFor(preset, box),
+        paramId: param.id,
+        points: lane?.points ?? [],
+        base: paramValue(box, param),
+        inactive: false,
+      };
+    }
+    // A lane whose box is no longer in the clip's preset.
+    const lane = clip.automation.find(
+      (l) => l.target.boxId === choice.boxId && l.paramId === choice.paramId,
+    );
+    const param = lane && laneParam(lane);
+    if (!lane || !param) return null;
+    return {
+      name: `${getBoxDescriptor(lane.target.boxType)?.name ?? lane.target.boxType} › ${param.name}`,
+      param,
+      target: lane.target,
+      paramId: lane.paramId,
+      points: lane.points,
+      base: param.default,
+      inactive: true,
+    };
+  });
+
+  const laneScene = $derived<LaneScene>(
+    activeLane ? { kind: 'automation', ...activeLane } : { kind: 'velocity' },
+  );
+  const laneHeight = $derived(laneHeightOf(laneScene));
+  /** The menu follows what's shown (velocity when the chosen box isn't in this clip's preset). */
+  const laneValue = $derived(
+    activeLane && session.pianoRollLane.kind === 'automation'
+      ? `a:${session.pianoRollLane.boxId}:${session.pianoRollLane.paramId}`
+      : 'velocity',
+  );
+
+  function chooseLane(value: string) {
+    const [, boxId, paramId] = value.split(':');
+    session.pianoRollLane =
+      value === 'velocity' || !boxId || !paramId
+        ? { kind: 'velocity' }
+        : { kind: 'automation', boxId, paramId };
+  }
+
+  function clearLane() {
+    if (!activeLane) return;
+    session.run(deleteLane(address(), activeLane.target.boxId, activeLane.paramId));
+  }
+
   type Drag =
     | { kind: 'seek' }
     | { kind: 'draw'; id: string; startTick: Tick }
@@ -75,10 +207,23 @@
       }
     | { kind: 'resize'; originals: Map<string, Note>; anchor: Note }
     | { kind: 'velocity' }
+    | {
+        kind: 'point';
+        lane: ActiveLane;
+        /** The lane's other points (the dragged one is re-added where it's dropped). */
+        others: readonly AutomationPoint[];
+        curve: AutomationPoint['curve'];
+        startX: number;
+        startY: number;
+        /** Whether the undo step was opened (a click without moving changes nothing). */
+        began: boolean;
+      }
     | { kind: 'marquee'; base: ReadonlySet<string> };
   let drag: Drag | null = null;
   /** Note created by the current gesture; a double-click right after shouldn't delete it. */
   let createdId: string | null = null;
+  /** Same for an automation point added by the current gesture. */
+  let pointAdded = false;
 
   function point(event: MouseEvent) {
     const rect = canvas!.getBoundingClientRect();
@@ -96,7 +241,7 @@
     if (!clip || width === 0 || height === 0) return;
     if (clip.id !== fittedClipId) {
       fittedClipId = clip.id;
-      view = fitView(clip, width, height);
+      view = fitView(clip, width, height, laneHeight);
     }
   });
 
@@ -107,6 +252,7 @@
     const ctx = prepareCanvas(canvas, width, height);
     if (!ctx) return;
     drawPianoRoll(ctx, canvas, {
+      lane: laneScene,
       clip: editing.clip,
       color: trackColor(editing.trackIndex),
       meter,
@@ -123,6 +269,7 @@
   $effect(() => {
     void [
       editing,
+      laneScene,
       view,
       width,
       height,
@@ -168,7 +315,10 @@
         view = { ...view, scrollTick: view.scrollTick + dx / view.pixelsPerTick };
       } else {
         const rows = Math.sign(event.deltaY) * Math.max(1, Math.round(Math.abs(event.deltaY) / 40));
-        const top = Math.min(127, Math.max(visibleRows(height) - 1, view.topPitch - rows));
+        const top = Math.min(
+          127,
+          Math.max(visibleRows(height, laneHeight) - 1, view.topPitch - rows),
+        );
         view = { ...view, topPitch: top };
       }
     };
@@ -218,6 +368,44 @@
     );
   }
 
+  /** Automation point under the pointer: start moving it, or add one (inside the clip). */
+  function startPointGesture(lane: ActiveLane, x: number, y: number, event: PointerEvent) {
+    if (!editing) return;
+    const { clip } = editing;
+    const index = automationPointAt(lane.points, clip, lane.param, view, height, x, y);
+    if (index >= 0) {
+      drag = {
+        kind: 'point',
+        lane,
+        others: lane.points.filter((_, i) => i !== index),
+        curve: lane.points[index]!.curve,
+        startX: x,
+        startY: y,
+        began: false,
+      };
+      return;
+    }
+    const tick = snap(xToTick(view, x), event) - clip.startTick;
+    if (tick < 0 || tick > clip.lengthTicks) return;
+    const added: AutomationPoint = {
+      tick,
+      value: automationValueAtY(y, lane.param, height),
+      curve: defaultCurve(lane.param),
+    };
+    session.begin('Add automation point');
+    session.run(setLanePoints(address(), lane.target, lane.paramId, [...lane.points, added]));
+    pointAdded = true;
+    drag = {
+      kind: 'point',
+      lane,
+      others: lane.points,
+      curve: added.curve,
+      startX: x,
+      startY: y,
+      began: true,
+    };
+  }
+
   function onpointerdown(event: PointerEvent) {
     if (event.button !== 0 || !canvas || !editing) return;
     session.focusArea = 'pianoRoll';
@@ -225,8 +413,9 @@
     const { clip } = editing;
     canvas.setPointerCapture(event.pointerId);
     createdId = null;
+    pointAdded = false;
 
-    switch (areaAt(x, y, height)) {
+    switch (areaAt(x, y, height, laneHeight)) {
       case 'ruler':
         session.seek(snap(xToTick(view, x), event));
         drag = { kind: 'seek' };
@@ -234,7 +423,11 @@
       case 'keys':
         audition(yToPitch(view, y));
         return;
-      case 'velocity':
+      case 'lane':
+        if (activeLane) {
+          startPointGesture(activeLane, x, y, event);
+          return;
+        }
         session.begin('Change velocity');
         drag = { kind: 'velocity' };
         setVelocityAt(x, y);
@@ -310,15 +503,23 @@
     const { x, y } = point(event);
     const { clip } = editing;
     if (!drag) {
-      const area = areaAt(x, y, height);
+      const area = areaAt(x, y, height, laneHeight);
       const hit = area === 'grid' ? noteAt(clip, view, x, y) : null;
+      const onPoint =
+        area === 'lane' &&
+        !!activeLane &&
+        automationPointAt(activeLane.points, clip, activeLane.param, view, height, x, y) >= 0;
       canvas.style.cursor = hit
         ? hit.edge
           ? 'ew-resize'
           : 'grab'
-        : area === 'ruler'
-          ? 'pointer'
-          : '';
+        : onPoint
+          ? 'grab'
+          : area === 'lane' && activeLane
+            ? 'crosshair'
+            : area === 'ruler'
+              ? 'pointer'
+              : '';
       return;
     }
 
@@ -329,6 +530,27 @@
       case 'velocity':
         setVelocityAt(x, y);
         break;
+      case 'point': {
+        if (!drag.began) {
+          if (Math.hypot(x - drag.startX, y - drag.startY) < 3) return;
+          session.begin('Move automation point');
+          drag.began = true;
+        }
+        canvas.style.cursor = 'grabbing';
+        const tick = Math.min(
+          clip.lengthTicks,
+          Math.max(0, snap(xToTick(view, x), event) - clip.startTick),
+        );
+        const moved = {
+          tick,
+          value: automationValueAtY(y, drag.lane.param, height),
+          curve: drag.curve,
+        };
+        session.run(
+          setLanePoints(address(), drag.lane.target, drag.lane.paramId, [...drag.others, moved]),
+        );
+        break;
+      }
       case 'marquee': {
         marquee = { ...marquee!, x1: x, y1: y };
         const inside = notesInMarquee(marquee.x0, marquee.y0, x, y);
@@ -397,13 +619,26 @@
     if (canvas) canvas.style.cursor = '';
     if (finished && ['draw', 'move', 'resize', 'velocity'].includes(finished.kind)) {
       session.commit();
+    } else if (finished?.kind === 'point' && finished.began) {
+      session.commit();
     }
   }
 
   function ondblclick(event: MouseEvent) {
     if (!editing) return;
     const { x, y } = point(event);
-    if (areaAt(x, y, height) !== 'grid') return;
+    const area = areaAt(x, y, height, laneHeight);
+    if (area === 'lane' && activeLane && !pointAdded) {
+      const lane = activeLane;
+      const index = automationPointAt(lane.points, editing.clip, lane.param, view, height, x, y);
+      if (index < 0) return;
+      const rest = lane.points.filter((_, i) => i !== index);
+      session.run(
+        setLanePoints(address(), lane.target, lane.paramId, rest, 'Delete automation point'),
+      );
+      return;
+    }
+    if (area !== 'grid') return;
     const hit = noteAt(editing.clip, view, x, y);
     if (!hit || hit.note.id === createdId) return;
     session.selectNotes([hit.note.id]);
@@ -434,10 +669,39 @@
       type="button"
       class="tool"
       disabled={!editing}
-      onclick={() => editing && (view = fitView(editing.clip, width, height))}>Fit</button
+      onclick={() => editing && (view = fitView(editing.clip, width, height, laneHeight))}
+      >Fit</button
     >
+    <span class="label">Lane</span>
+    <select
+      class="lane-select"
+      aria-label="Lane"
+      disabled={!editing}
+      value={laneValue}
+      onchange={(e) => chooseLane(e.currentTarget.value)}
+    >
+      <option value="velocity">Velocity</option>
+      {#each laneMenu.groups as group (group.label)}
+        <optgroup label={group.label}>
+          {#each group.options as option (option.value)}
+            <option value={option.value}>{option.automated ? '● ' : ''}{option.label}</option>
+          {/each}
+        </optgroup>
+      {/each}
+      {#if laneMenu.unlinked.length > 0}
+        <optgroup label="Unlinked (box removed)">
+          {#each laneMenu.unlinked as option (option.value)}
+            <option value={option.value}>● {option.label}</option>
+          {/each}
+        </optgroup>
+      {/if}
+    </select>
+    {#if activeLane && activeLane.points.length > 0}
+      <button type="button" class="tool" onclick={clearLane}>Clear</button>
+    {/if}
     <span class="hint">
-      Click to add · drag to move · Shift+drag to select · double-click to delete · ↑↓ transpose
+      Click to add · drag to move · Shift+drag to select · double-click to delete · ↑↓ transpose ·
+      Lane: velocity or automation
     </span>
   </div>
   <div class="surface" bind:clientWidth={width} bind:clientHeight={height}>
@@ -500,6 +764,18 @@
 
   .tool:disabled {
     opacity: 0.4;
+  }
+
+  .lane-select {
+    height: 28px;
+    max-width: 200px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-s);
+    background: var(--panel-raised);
+    color: var(--ink);
+    font: inherit;
+    font-size: var(--text-s);
   }
 
   .hint {

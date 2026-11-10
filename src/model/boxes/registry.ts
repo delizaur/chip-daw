@@ -41,6 +41,18 @@ export function constrainParam(param: ParamDescriptor, value: number): number {
   return v;
 }
 
+export type ParamReader = (params: Readonly<Record<string, number>>, id: string) => number;
+
+/**
+ * Reads one box type's params: `read(params, id)` is the value, or the param's default when it's
+ * missing, like `paramValue`. Allocation-free, for the engine, where automation can call a box's
+ * `setParams` every block.
+ */
+export function paramReader(descriptor: BoxDescriptor): ParamReader {
+  const defaults = new Map(descriptor.params.map((p) => [p.id, p.default]));
+  return (params, id) => params[id] ?? defaults.get(id) ?? 0;
+}
+
 /** A box's value for `param`, falling back to the default (e.g. params added in a later version). */
 export function paramValue(box: BoxInstance, param: ParamDescriptor): number {
   return box.params[param.id] ?? param.default;

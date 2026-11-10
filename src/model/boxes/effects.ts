@@ -156,7 +156,10 @@ export const ARPEGGIATOR: BoxDescriptor = {
 };
 
 /** Ticks of an arp rate param value. */
+/** Ticks per arp step for each rate value (precomputed: the engine reads it every block). */
+const ARP_RATE_TICKS = ARP_RATES.map((label) => SYNC_DIVISIONS[divisionIndex(label)]!.ticks);
+const SIXTEENTH_TICKS = SYNC_DIVISIONS[divisionIndex('1/16')]!.ticks;
+
 export function arpRateTicks(value: number): number {
-  const label = ARP_RATES[Math.round(value)] ?? '1/16';
-  return SYNC_DIVISIONS[divisionIndex(label)]!.ticks;
+  return ARP_RATE_TICKS[Math.round(value)] ?? SIXTEENTH_TICKS;
 }

@@ -1,10 +1,19 @@
+import type { ParamDescriptor } from '../../model/boxes/types';
+import { constrainParam } from '../../model/boxes/registry';
 import { PPQ } from '../../model/constants';
-import type { Clip, Note, Tick } from '../../model/types';
+import { fromNormalized, toNormalized } from '../../model/scale';
+import type { AutomationPoint, Clip, Note, Tick } from '../../model/types';
 
-/** Layout of the piano roll canvas: keys on the left, ruler on top, velocities at the bottom. */
+/**
+ * Layout of the piano roll canvas: keys on the left, ruler on top, and a lane at the bottom
+ * showing velocities or one parameter's automation (taller, for finer values).
+ */
 export const KEYS_WIDTH = 44;
 export const RULER_HEIGHT = 20;
 export const VELOCITY_HEIGHT = 56;
+export const AUTOMATION_HEIGHT = 96;
+/** Pointer distance from an automation point that grabs it. */
+export const POINT_GRAB_PX = 7;
 export const ROW_HEIGHT = 12;
 /** Pointer distance from a note's end that grabs it for resizing. */
 export const NOTE_EDGE_PX = 5;
@@ -37,17 +46,66 @@ export const yToPitch = (view: RollView, y: number) =>
 const BLACK_KEYS = new Set([1, 3, 6, 8, 10]);
 export const isBlackKey = (pitch: number) => BLACK_KEYS.has(((pitch % 12) + 12) % 12);
 
-export type RollArea = 'ruler' | 'keys' | 'grid' | 'velocity';
+/** The bottom lane: velocities or automation. */
+export type RollArea = 'ruler' | 'keys' | 'grid' | 'lane';
 
-export function areaAt(x: number, y: number, height: number): RollArea {
+export function areaAt(
+  x: number,
+  y: number,
+  height: number,
+  laneHeight = VELOCITY_HEIGHT,
+): RollArea {
   if (y < RULER_HEIGHT) return 'ruler';
-  if (y >= height - VELOCITY_HEIGHT) return 'velocity';
+  if (y >= height - laneHeight) return 'lane';
   return x < KEYS_WIDTH ? 'keys' : 'grid';
 }
 
 /** Rows that fit in the note grid. */
-export const visibleRows = (height: number) =>
-  Math.max(1, Math.floor((height - RULER_HEIGHT - VELOCITY_HEIGHT) / ROW_HEIGHT));
+export const visibleRows = (height: number, laneHeight = VELOCITY_HEIGHT) =>
+  Math.max(1, Math.floor((height - RULER_HEIGHT - laneHeight) / ROW_HEIGHT));
+
+/** Top and bottom of the drawable part of an automation lane. */
+export const automationBounds = (height: number) => ({
+  top: height - AUTOMATION_HEIGHT + 16,
+  bottom: height - 8,
+});
+
+/** Y of a param value in the automation lane (through the param's scale, e.g. exp for Hz). */
+export function automationY(value: number, param: ParamDescriptor, height: number): number {
+  const { top, bottom } = automationBounds(height);
+  return bottom - toNormalized(value, param.min, param.max, param.scale) * (bottom - top);
+}
+
+/** The param value at a y position in the automation lane, constrained to the param. */
+export function automationValueAtY(y: number, param: ParamDescriptor, height: number): number {
+  const { top, bottom } = automationBounds(height);
+  const n = (bottom - y) / (bottom - top);
+  return constrainParam(param, fromNormalized(n, param.min, param.max, param.scale));
+}
+
+/** Index of the automation point under a point of the lane (the nearest in reach), or -1. */
+export function automationPointAt(
+  points: readonly AutomationPoint[],
+  clip: Clip,
+  param: ParamDescriptor,
+  view: RollView,
+  height: number,
+  x: number,
+  y: number,
+): number {
+  let best = -1;
+  let bestDistance = POINT_GRAB_PX;
+  points.forEach((point, i) => {
+    const px = tickToX(view, clip.startTick + point.tick);
+    const py = automationY(point.value, param, height);
+    const distance = Math.hypot(px - x, py - y);
+    if (distance <= bestDistance) {
+      best = i;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
 
 /** The note under a point of the grid (topmost wins), and whether its end edge is grabbed. */
 export function noteAt(
@@ -102,7 +160,12 @@ export function velocityAtY(y: number, height: number): number {
 }
 
 /** A view showing the whole clip, centred on its notes (or around C4 when empty). */
-export function fitView(clip: Clip, width: number, height: number): RollView {
+export function fitView(
+  clip: Clip,
+  width: number,
+  height: number,
+  laneHeight = VELOCITY_HEIGHT,
+): RollView {
   const usable = Math.max(100, width - KEYS_WIDTH - 24);
   const pixelsPerTick = Math.min(
     MAX_PIXELS_PER_TICK,
@@ -112,7 +175,7 @@ export function fitView(clip: Clip, width: number, height: number): RollView {
   const centre = pitches.length
     ? Math.round((Math.min(...pitches) + Math.max(...pitches)) / 2)
     : 66;
-  const rows = visibleRows(height);
+  const rows = visibleRows(height, laneHeight);
   return {
     pixelsPerTick,
     scrollTick: clip.startTick - 12 / pixelsPerTick,

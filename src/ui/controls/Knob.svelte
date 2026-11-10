@@ -18,6 +18,8 @@
     size?: number;
     format?: (value: number) => string;
     disabled?: boolean;
+    /** Shows a mark next to the label, with this tooltip (e.g. the param is automated). */
+    mark?: string;
     oninput: (value: number) => void;
     onstart?: () => void;
     onend?: () => void;
@@ -35,6 +37,7 @@
     size = 48,
     format = (v) => v.toFixed(2),
     disabled = false,
+    mark,
     oninput,
     onstart,
     onend,
@@ -146,7 +149,9 @@
       />
     </svg>
   </div>
-  <div class="label">{label}</div>
+  <div class="label">
+    {#if mark}<span class="mark" title={mark} aria-hidden="true">●</span>{/if}{label}
+  </div>
   <div class="value">{format(value)}</div>
 </div>
 
@@ -216,6 +221,11 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--ink-dim);
+  }
+
+  .mark {
+    margin-right: 3px;
+    color: var(--c-red);
   }
 
   .value {

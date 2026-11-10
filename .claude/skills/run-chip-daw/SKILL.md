@@ -128,7 +128,8 @@ combobox `Move to folder`, textbox `Library preset name`; preset editor: textbox
 clips selected `Make unique`, `Use track preset`, `Load to track`, `Show track preset`; read what
 it shows with `eval chipDaw.session.presetView` and the track's own preset with
 `eval chipDaw.session.selectedTrackPreset`; `Quantize`,
-`Quantize selected`, `Fit`, and per sequencer/effect box `<Name> on` (bypass toggle),
+`Quantize selected`, `Fit`, combobox `Lane` (`Velocity`, or a param name such as `Level`,
+`Cutoff`; ones with automation read `● Level`), button `Clear` (the lane's automation), and per sequencer/effect box `<Name> on` (bypass toggle),
 `Move <Name> left`/`right`, `Remove <Name>`; comboboxes `Add sequencer`, `Add effect` (options
 `Arpeggiator`; `Bitcrush`, `Filter`, `Delay`, `Reverb`) and `<Name> type` (replace a box); tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
 `1/32`; img `MIDI activity` (its `title` is the last message); spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,

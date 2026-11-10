@@ -1,4 +1,5 @@
 import { applyPatches, enablePatches } from 'immer';
+import type { RecordedParamMove } from '../model/automation-commands';
 import type { RecordedNote, RecordedTake } from '../model/commands';
 import { PPQ } from '../model/constants';
 import type { Project, Tick } from '../model/types';
@@ -30,6 +31,8 @@ interface Take {
   notes: RecordedNote[];
   /** "trackId:pitch" → index in `notes` of the note still held. */
   held: Map<string, number>;
+  /** Knob moves (automation). */
+  params: RecordedParamMove[];
 }
 
 /**
@@ -65,6 +68,8 @@ export class Engine {
   #countIn: Tick = 0;
   /** Length of the current count-in, in ticks. */
   #countInTotal: Tick = 0;
+  /** Knob moves during the count-in: the last value per param, recorded at the start. */
+  readonly #countInMoves = new Map<string, RecordedParamMove>();
   /** Notes played in the last moment of the count-in, still held ("trackId:pitch" → note). */
   readonly #earlyNotes = new Map<string, { trackId: string; pitch: number; velocity: number }>();
   readonly #window: PlayWindow = { start: 0, end: 0, ticksPerSample: 0 };
@@ -126,6 +131,22 @@ export class Engine {
         }
         break;
       }
+      case 'paramMove': {
+        const { trackId, target, paramId, value } = message;
+        this.#tracksById.get(trackId)?.moveParam(target, paramId, value);
+        const take = this.#take;
+        if (take) {
+          const tick = take.looped
+            ? Math.max(take.startTick, this.#heardPosition())
+            : this.#heardPosition();
+          take.params.push({ trackId, target, paramId, value, tick });
+        } else if (this.#countIn > 0 && this.#recordArmed) {
+          // Set during the count-in: the value the recording starts with.
+          const key = `${trackId}:${target.boxId}:${paramId}`;
+          this.#countInMoves.set(key, { trackId, target, paramId, value, tick: 0 });
+        }
+        break;
+      }
       case 'noteOff':
         this.#tracksById.get(message.trackId)?.noteOff(message.pitch);
         this.#recordNoteOff(message.trackId, message.pitch);
@@ -152,6 +173,8 @@ export class Engine {
         if (this.#countIn > 0) {
           this.#countIn = 0;
           this.#earlyNotes.clear();
+          this.#countInMoves.clear();
+          for (const track of this.#tracks) track.releaseMoves(this.#position);
           this.#reportTransport();
           break;
         }
@@ -206,8 +229,12 @@ export class Engine {
         take.held.set(key, index);
         this.#emitTakeNote(take, index, true);
       }
+      for (const move of this.#countInMoves.values()) {
+        take.params.push({ ...move, tick: take.startTick });
+      }
     }
     this.#earlyNotes.clear();
+    this.#countInMoves.clear();
     this.#reportTransport();
   }
 
@@ -238,10 +265,12 @@ export class Engine {
   #updateTake(): void {
     const recording = this.#recordArmed && this.#playing;
     if (recording && !this.#take) {
-      this.#take = { startTick: this.#position, notes: [], held: new Map() };
+      this.#take = { startTick: this.#position, notes: [], held: new Map(), params: [] };
       this.#emit({ type: 'takeStarted', startTick: this.#position });
     } else if (!recording) {
       this.#endTake();
+      // Knobs moved while recording only changed the sound for the take.
+      for (const track of this.#tracks) track.releaseMoves(this.#position);
     }
   }
 
@@ -255,6 +284,7 @@ export class Engine {
       startTick: take.startTick,
       endTick: this.#position,
       notes: take.notes,
+      params: take.params,
     };
     this.#emit({ type: 'recorded', take: finished });
   }

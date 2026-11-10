@@ -1,6 +1,8 @@
 import { BITCRUSH } from '../../model/boxes/effects';
-import { paramValue } from '../../model/boxes/registry';
+import { paramReader } from '../../model/boxes/registry';
 import type { BlockContext, EffectRuntime } from '../boxes/types';
+
+const read = paramReader(BITCRUSH);
 
 /** Bit-depth reduction plus sample-and-hold rate reduction (the classic lo-fi "crunch"). */
 export class Bitcrush implements EffectRuntime {
@@ -17,14 +19,9 @@ export class Bitcrush implements EffectRuntime {
   }
 
   setParams(params: Readonly<Record<string, number>>): void {
-    const value = (id: string) =>
-      paramValue(
-        { id: '', type: BITCRUSH.type, params },
-        BITCRUSH.params.find((p) => p.id === id)!,
-      );
-    this.#step = 2 / Math.pow(2, Math.round(value('bits')));
-    this.#increment = Math.min(1, value('rate') / this.#sampleRate);
-    this.#mix = value('mix');
+    this.#step = 2 / Math.pow(2, Math.round(read(params, 'bits')));
+    this.#increment = Math.min(1, read(params, 'rate') / this.#sampleRate);
+    this.#mix = read(params, 'mix');
   }
 
   process(left: Float32Array, right: Float32Array, frames: number, _context: BlockContext): void {

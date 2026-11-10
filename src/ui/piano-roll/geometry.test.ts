@@ -49,7 +49,7 @@ describe('piano roll geometry', () => {
     expect(areaAt(100, 5, 400)).toBe('ruler');
     expect(areaAt(10, 100, 400)).toBe('keys');
     expect(areaAt(100, 100, 400)).toBe('grid');
-    expect(areaAt(100, 400 - VELOCITY_HEIGHT + 1, 400)).toBe('velocity');
+    expect(areaAt(100, 400 - VELOCITY_HEIGHT + 1, 400)).toBe('lane');
   });
 
   it('finds notes and their end edges', () => {

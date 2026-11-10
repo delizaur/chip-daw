@@ -34,9 +34,11 @@ import {
   projectNameFromFile,
   serializeProject,
 } from '../../model/project-file';
+import { targetFor } from '../../model/automation';
+import { constrainParam, getParamDescriptor } from '../../model/boxes/registry';
 import { findPresetById, presetUsage, type PresetTarget } from '../../model/presets';
 import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
-import type { Clip, Note, Preset, Project, Tick, Track } from '../../model/types';
+import type { BoxInstance, Clip, Note, Preset, Project, Tick, Track } from '../../model/types';
 import { Autosaver, loadAutosave } from '../../persistence/autosave';
 import {
   chooseSaveTarget,
@@ -46,6 +48,7 @@ import {
   WAV_FILE,
 } from '../../persistence/files';
 import type { RenderReply, RenderRequest } from '../../audio/render.worker';
+import { buildCurves, type AutomationCurve } from '../../engine/automation';
 import { COUNT_IN_BEATS } from '../../engine/engine';
 import { songEndTick } from '../../engine/offline-render';
 import { adjacentClip, clipEdgeJump, closestClip, type Direction } from '../arrangement/navigation';
@@ -94,6 +97,13 @@ export type PresetView =
       canMakeUnique: boolean;
     }
   | { kind: 'mixed'; track: Track; trackIndex: number; clipIds: string[] };
+
+/**
+ * What the piano roll's bottom lane shows: velocities, or the automation of one param. `boxId`
+ * is a box of the clip's preset, or (for a lane whose box is gone) the lane's own target id.
+ */
+export type LaneChoice =
+  { kind: 'velocity' } | { kind: 'automation'; boxId: string; paramId: string };
 
 export interface Notice {
   kind: 'info' | 'error';
@@ -201,6 +211,13 @@ class Session {
   selectedNoteIds = $state.raw<ReadonlySet<string>>(new Set());
   /** Piano roll snap grid in ticks. */
   pianoRollGrid = $state<Tick>(PPQ / 4);
+  /** The piano roll's bottom lane. */
+  pianoRollLane = $state.raw<LaneChoice>({ kind: 'velocity' });
+  /**
+   * Knob values moved while recording, shown on the knobs ("boxId:paramId" → value). They're
+   * recorded as automation; the preset keeps its own values.
+   */
+  liveParams = $state.raw<Readonly<Record<string, number>>>({});
   /** Notes copied in the piano roll, ticks relative to the first one. */
   #noteClipboard: Note[] = [];
 
@@ -230,6 +247,7 @@ class Session {
         this.masterPeak = message.master;
       } else if (message.type === 'transport') {
         this.playing = message.playing;
+        if (!message.playing) this.#endKnobRecording();
         this.countIn = message.countIn;
         // A report from before the engine got our latest seek would move the playhead back.
         if (message.seekSeq >= this.#seekSeq) this.#setPosition(message.tick);
@@ -241,7 +259,10 @@ class Session {
         this.liveTake = { startTick: this.liveTake?.startTick ?? message.note.startTick, notes };
       } else if (message.type === 'recorded') {
         this.liveTake = null;
-        if (message.take.notes.length > 0) this.run(recordTake(message.take, this.overdub));
+        const { take } = message;
+        if (take.notes.length > 0 || (take.params?.length ?? 0) > 0) {
+          this.run(recordTake(take, this.overdub));
+        }
       }
     });
   }
@@ -470,6 +491,7 @@ class Session {
 
   toggleRecord(): void {
     this.recordArmed = !this.recordArmed;
+    if (!this.recordArmed) this.#endKnobRecording();
     this.#engine.send({ type: 'setRecord', armed: this.recordArmed });
   }
 
@@ -667,6 +689,59 @@ class Session {
     } else {
       this.loadSelectedClipPresetToTrack();
     }
+  }
+
+  // --- Automation ---------------------------------------------------------------------------
+
+  /**
+   * While recording (or counting in to record), knob moves in the preset editor (track or clip
+   * preset) are recorded as automation instead of changing the preset.
+   */
+  get recordingKnobs(): boolean {
+    return this.recordArmed && (this.playing || this.countIn > 0);
+  }
+
+  /** A knob moved while recording: heard right away, recorded as automation. */
+  moveParamWhileRecording(box: BoxInstance, paramId: string, value: number): void {
+    const track = this.selectedTrack;
+    const view = this.presetView;
+    const preset = view && view.kind !== 'mixed' ? view.preset : undefined;
+    const param = getParamDescriptor(box.type, paramId);
+    if (!track || !preset || !param) return;
+    const constrained = constrainParam(param, value);
+    this.#engine.send({
+      type: 'paramMove',
+      trackId: track.id,
+      target: targetFor(preset, box),
+      paramId,
+      value: constrained,
+    });
+    this.liveParams = { ...this.liveParams, [`${box.id}:${paramId}`]: constrained };
+  }
+
+  #curveCache: { clips: readonly Clip[]; preset: Preset; curves: AutomationCurve[] } | null = null;
+
+  /**
+   * Automation curves of the clips on `track` that play with `preset` (the same curves the
+   * engine plays), to show automated knobs moving. Cached until the clips or preset change.
+   */
+  automationCurves(track: Track, preset: Preset): AutomationCurve[] {
+    const cache = this.#curveCache;
+    if (cache && cache.clips === track.clips && cache.preset === preset) return cache.curves;
+    const clips = track.clips.filter((c) => c.presetId === preset.id);
+    const curves = buildCurves(clips, preset);
+    this.#curveCache = { clips: track.clips, preset, curves };
+    return curves;
+  }
+
+  /** The value a knob shows while recording, if it was moved. */
+  liveParamValue(boxId: string, paramId: string): number | undefined {
+    return this.liveParams[`${boxId}:${paramId}`];
+  }
+
+  /** Recording stopped: knobs show the preset's own values again (the engine resets too). */
+  #endKnobRecording(): void {
+    if (Object.keys(this.liveParams).length > 0) this.liveParams = {};
   }
 
   /** Shows the track preset in the editor (deselects the clips). */

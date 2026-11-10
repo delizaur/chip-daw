@@ -4,6 +4,7 @@ import { absoluteNotes, clipEnd, createClip, placeClip, setClipStart } from './c
 import type { Command } from './history';
 import { PPQ } from './constants';
 import { createId } from './ids';
+import { mergeLanes, writeRecordedMoves, type RecordedParamMove } from './automation-commands';
 import { editPreset, ensurePreset, prunePresets, type PresetTarget } from './presets';
 import type { BoxInstance, Clip, Note, Preset, Project, Tick, Track } from './types';
 
@@ -252,6 +253,8 @@ export interface RecordedTake {
   startTick: Tick;
   endTick: Tick;
   notes: RecordedNote[];
+  /** Knob moves made while recording (automation). */
+  params?: RecordedParamMove[];
 }
 
 /** Shortest note a take can produce (a 64th note), so tapped keys aren't zero-length. */
@@ -266,7 +269,12 @@ const MIN_NOTE_TICKS = 15;
  *
  * A new clip gets the track preset (shared, not copied: copy on write keeps it safe). A merged
  * clip keeps the preset of the first clip it merged with, since overdubbed notes are heard
- * through that clip's preset while recording.
+ * through that clip's preset while recording, and the automation of the clips it merged.
+ *
+ * Knob moves (`take.params`) become automation: on a track that got notes, in the clip the take
+ * makes; on a track that only got moves, in the clips already under the recorded time (notes
+ * untouched), or in a new empty clip spanning the take when there are none. Each lane's moves
+ * replace its points between the first and the last move.
  */
 export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand {
   return {
@@ -275,6 +283,26 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
       const byTrack = new Map<string, RecordedNote[]>();
       for (const note of take.notes) {
         byTrack.set(note.trackId, [...(byTrack.get(note.trackId) ?? []), note]);
+      }
+      const movesByTrack = new Map<string, RecordedParamMove[]>();
+      for (const move of take.params ?? []) {
+        movesByTrack.set(move.trackId, [...(movesByTrack.get(move.trackId) ?? []), move]);
+      }
+
+      // Tracks with only knob moves: into the clips under the recorded time, or a new clip.
+      for (const [trackId, moves] of movesByTrack) {
+        const track = project.tracks.find((t) => t.id === trackId);
+        if (!track || byTrack.has(trackId)) continue;
+        const start = Math.max(0, Math.floor(take.startTick));
+        const end = Math.max(start + MIN_NOTE_TICKS, Math.ceil(take.endTick));
+        const under = track.clips.filter((c) => c.startTick < end && clipEnd(c) > start);
+        if (under.length === 0) {
+          const clip = createClip(start, end - start, track.presetId);
+          writeRecordedMoves(clip, moves);
+          placeClip(track, clip);
+        } else {
+          for (const clip of under) writeRecordedMoves(clip, moves);
+        }
       }
 
       for (const [trackId, recorded] of byTrack) {
@@ -298,9 +326,9 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
         });
 
         let presetId = track.presetId;
+        let overlapping: Clip[] = [];
         if (overdub) {
-          // Automation of merged clips is not kept yet; nothing creates automation before Phase 4.
-          const overlapping = track.clips.filter((c) => c.startTick < end && clipEnd(c) > start);
+          overlapping = track.clips.filter((c) => c.startTick < end && clipEnd(c) > start);
           if (overlapping[0]) presetId = overlapping[0].presetId;
           for (const clip of overlapping) {
             start = Math.min(start, clip.startTick);
@@ -318,6 +346,8 @@ export function recordTake(take: RecordedTake, overdub: boolean): ProjectCommand
           presetId,
           notes.map((n) => ({ ...n, tick: n.tick - start })),
         );
+        clip.automation = mergeLanes(overlapping, start);
+        writeRecordedMoves(clip, movesByTrack.get(trackId) ?? []);
         placeClip(track, clip);
       }
       prunePresets(project);

@@ -1,6 +1,8 @@
 import { REVERB } from '../../model/boxes/effects';
-import { paramValue } from '../../model/boxes/registry';
+import { paramReader } from '../../model/boxes/registry';
 import type { BlockContext, EffectRuntime } from '../boxes/types';
+
+const read = paramReader(REVERB);
 
 /** Freeverb tunings (in samples at 44.1 kHz), scaled to the sample rate. */
 const COMB_TUNINGS = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
@@ -65,19 +67,19 @@ export class Reverb implements EffectRuntime {
   }
 
   setParams(params: Readonly<Record<string, number>>): void {
-    const value = (id: string) =>
-      paramValue(
-        { id: '', type: REVERB.type, params },
-        REVERB.params.find((p) => p.id === id)!,
-      );
-    const feedback = 0.7 + value('size') * 0.28;
-    const damp = value('damping') * 0.4;
-    for (const comb of [...this.#combsL, ...this.#combsR]) {
+    const feedback = 0.7 + read(params, 'size') * 0.28;
+    const damp = read(params, 'damping') * 0.4;
+    // Loops, not a combined array: setParams may run every block under automation.
+    for (const comb of this.#combsL) {
       comb.feedback = feedback;
       comb.damp = damp;
     }
-    const wet = value('wet') * WET_SCALE;
-    const width = value('width');
+    for (const comb of this.#combsR) {
+      comb.feedback = feedback;
+      comb.damp = damp;
+    }
+    const wet = read(params, 'wet') * WET_SCALE;
+    const width = read(params, 'width');
     this.#wet1 = wet * (width / 2 + 0.5);
     this.#wet2 = wet * ((1 - width) / 2);
   }

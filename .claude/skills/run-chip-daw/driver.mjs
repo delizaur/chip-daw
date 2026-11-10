@@ -601,6 +601,24 @@ async function smoke(c) {
   const rollLevel = await c['meter-max'](['800']);
   await c.press(['Space']);
   check(rollLevel > 0.005, `drawn notes play back (meter ${rollLevel.toFixed(3)})`);
+
+  // Automation: the Lane menu turns the bottom lane into a param's automation (96 px tall);
+  // a click inside the clip adds a point.
+  await c.select(['Lane', '|', 'Level']);
+  await c['click-at'](['.piano-roll-canvas', X(960), String(rollHeight - 40)]);
+  const lanes = JSON.parse(
+    await c.eval([
+      "chipDaw.session.editing.clip.automation.map(l => `${l.paramId}:${l.points.map(p => p.tick).join(',')}`).join(' ')",
+    ]),
+  );
+  check(lanes === 'level:960', `clicking the Level lane adds an automation point (${lanes})`);
+  const marked = JSON.parse(
+    await c.eval(["document.querySelector('[aria-label=Lane]').selectedOptions[0].text"]),
+  );
+  check(marked === '● Level', `the Lane menu marks automated params (${marked})`);
+  check((await undoTitle()).startsWith('Undo Add automation point'), 'adding a point is undoable');
+  await c.press(['Control+z']);
+  await c.select(['Lane', '|', 'Velocity']);
   await c.screenshot(['4-piano-roll']);
 
   // The key left of 1 turns the keyboard piano off; its letter keys become shortcuts. Now:

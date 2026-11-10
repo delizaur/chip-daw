@@ -244,7 +244,9 @@ describe('recording', () => {
     engine.handle({ type: 'setRecord', armed: true });
     render(0.1);
     engine.handle({ type: 'pause' });
-    expect(takes(messages)).toEqual([{ startTick: 0, endTick: expect.any(Number), notes: [] }]);
+    expect(takes(messages)).toEqual([
+      { startTick: 0, endTick: expect.any(Number), notes: [], params: [] },
+    ]);
   });
 
   it('does not record auditions', () => {

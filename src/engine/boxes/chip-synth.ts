@@ -1,10 +1,12 @@
 import { CHIP_SYNTH, ChipWave } from '../../model/boxes/chip-synth';
-import { paramValue } from '../../model/boxes/registry';
+import { paramReader } from '../../model/boxes/registry';
 import { SmoothedValue } from '../dsp';
-import { Envelope, envelopeShape, type EnvelopeShape } from '../envelope';
+import { Envelope, envelopeShape, setEnvelopeShape, type EnvelopeShape } from '../envelope';
 import { noteFrequency, pulse, steppedTriangle, stepLfsr } from '../oscillators';
 import type { SynthRuntime } from './types';
 import { VoicePool, type Voice } from './voice-pool';
+
+const read = paramReader(CHIP_SYNTH);
 
 const VOICE_COUNT = 8;
 /** Headroom so several voices and tracks can play before the master soft-clipper. */
@@ -143,22 +145,19 @@ export class ChipSynth implements SynthRuntime {
   #snapLevel = true;
 
   setParams(params: Readonly<Record<string, number>>): void {
-    const box = { id: '', type: CHIP_SYNTH.type, params };
-    const value = (id: string) =>
-      paramValue(
-        box,
-        CHIP_SYNTH.params.find((p) => p.id === id)!,
-      );
-    this.#settings.wave = value('wave');
-    this.#settings.tuning = value('transpose') + value('fine') / 100;
-    this.#settings.envelope = envelopeShape(
-      value('attack'),
-      value('decay'),
-      value('sustain'),
-      value('release'),
+    // Allocation-free: automation can call this every block.
+    const settings = this.#settings;
+    settings.wave = read(params, 'wave');
+    settings.tuning = read(params, 'transpose') + read(params, 'fine') / 100;
+    setEnvelopeShape(
+      settings.envelope,
+      read(params, 'attack'),
+      read(params, 'decay'),
+      read(params, 'sustain'),
+      read(params, 'release'),
       this.#sampleRate,
     );
-    this.#level.target = value('level') * OUTPUT_GAIN;
+    this.#level.target = read(params, 'level') * OUTPUT_GAIN;
     if (this.#snapLevel) {
       this.#level.current = this.#level.target;
       this.#snapLevel = false;

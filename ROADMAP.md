@@ -53,9 +53,9 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 - [x] The key left of 1 turns the computer keyboard piano off; its letter keys become shortcuts: R record, O overdub, M metronome, arrows select clips, A/D jump between clip edges, Enter opens the piano roll, U/P/T clip preset buttons
 
 ## Phase 4: Time and automation
-- [ ] Clip automation lanes; draw/edit points; hold-last-value + chase on seek
-- [ ] Re-link automation to matching boxes when a clip's preset changes; show unmatched lanes as inactive
-- [ ] Record automation by moving params while recording (written into the clip under the playhead; a clip is created if none)
+- [x] Clip automation lanes; draw/edit points (piano roll Lane menu); hold-last-value + chase on seek
+- [x] Re-link automation to matching boxes when a clip's preset changes; show unmatched lanes as inactive
+- [x] Record automation by moving params while recording (written into the clip under the playhead; a clip is created if none)
 - [ ] Insert/delete bars: shift all clips and tempo/meter events after a point, as one undo step
 - [ ] Tempo map UI: BPM / meter / subdivision changes; tempo automation (linear ramps)
 

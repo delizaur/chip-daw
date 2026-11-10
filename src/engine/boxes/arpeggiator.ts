@@ -1,7 +1,9 @@
 import { ARPEGGIATOR, ArpMode, arpRateTicks } from '../../model/boxes/effects';
-import { paramValue } from '../../model/boxes/registry';
+import { paramReader } from '../../model/boxes/registry';
 import type { BlockEvents } from '../note-schedule';
 import type { BlockContext, SequencerRuntime } from './types';
+
+const read = paramReader(ARPEGGIATOR);
 
 const MAX_HELD = 32;
 const MAX_PATTERN = MAX_HELD * 4;
@@ -50,16 +52,16 @@ export class Arpeggiator implements SequencerRuntime {
   #inCount = 0;
 
   setParams(params: Readonly<Record<string, number>>): void {
-    const value = (id: string) =>
-      paramValue(
-        { id: '', type: ARPEGGIATOR.type, params },
-        ARPEGGIATOR.params.find((p) => p.id === id)!,
-      );
-    this.#mode = Math.round(value('mode'));
-    this.#rateTicks = arpRateTicks(value('rate'));
-    this.#octaves = Math.round(value('octaves'));
-    this.#gate = value('gate');
-    this.#rebuildPattern();
+    const mode = Math.round(read(params, 'mode'));
+    const octaves = Math.round(read(params, 'octaves'));
+    this.#rateTicks = arpRateTicks(read(params, 'rate'));
+    this.#gate = read(params, 'gate');
+    // The pattern only depends on these (rate and gate can be automated without rebuilding it).
+    if (mode !== this.#mode || octaves !== this.#octaves) {
+      this.#mode = mode;
+      this.#octaves = octaves;
+      this.#rebuildPattern();
+    }
   }
 
   noteOn(pitch: number, velocity: number, offset: number): void {

@@ -13,6 +13,10 @@
   import BoxPanel from './BoxPanel.svelte';
 
   const view = $derived(session.presetView);
+  /** Automation of the clips on this track that play with the shown preset. */
+  const curves = $derived(
+    view && view.kind !== 'mixed' ? session.automationCurves(view.track, view.preset) : [],
+  );
   const sequencerTypes = boxDescriptorsOfKind('sequencer');
   const effectTypes = boxDescriptorsOfKind('effect');
 
@@ -66,6 +70,12 @@
                 : ''}
             </span>
           {/if}
+        {/if}
+
+        {#if session.recordingKnobs && view.kind !== 'mixed'}
+          <span class="recording" title="They become automation in the recorded clip"
+            >● Recording knob moves</span
+          >
         {/if}
 
         {#if view.kind !== 'track'}
@@ -141,13 +151,25 @@
           {/each}
         </select>
         {#each view.preset.sequencers as box, i (box.id)}
-          <BoxPanel {box} target={view.target} index={i} count={view.preset.sequencers.length} />
+          <BoxPanel
+            {box}
+            {curves}
+            target={view.target}
+            index={i}
+            count={view.preset.sequencers.length}
+          />
           <span class="arrow" aria-hidden="true">→</span>
         {/each}
-        <BoxPanel box={view.preset.synth} target={view.target} index={0} count={1} />
+        <BoxPanel box={view.preset.synth} {curves} target={view.target} index={0} count={1} />
         {#each view.preset.effects as box, i (box.id)}
           <span class="arrow" aria-hidden="true">→</span>
-          <BoxPanel {box} target={view.target} index={i} count={view.preset.effects.length} />
+          <BoxPanel
+            {box}
+            {curves}
+            target={view.target}
+            index={i}
+            count={view.preset.effects.length}
+          />
         {/each}
         <select class="add" aria-label="Add effect" onchange={add}>
           <option value="">+ Effect</option>
@@ -244,6 +266,12 @@
   .usage {
     font-size: var(--text-xs);
     color: var(--ink-dim);
+  }
+
+  .recording {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--c-red);
   }
 
   .actions {
