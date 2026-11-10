@@ -65,7 +65,7 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 ## Phase 5: Sounds and polish
 Order: the synth engines first (one at a time: FM, Game Boy, SID), then the rest of Phase 4, then the rest of Phase 5.
 - [x] FM synth (Genesis-style, 2 operators), with starter presets
-- [ ] Game Boy-style wavetable synth (preset waves with a morph knob)
+- [x] Game Boy-style wavetable synth ("Wave": 8 preset 4-bit waves with a morph knob), with starter presets
 - [ ] SID-style synth (Commodore 64)
 - [ ] Possibly a sampler (needs audio stored in projects and the library)
 - [ ] Visual polish pass on the OP-1-inspired look

@@ -6,6 +6,7 @@ import { ChipWave } from './boxes/chip-synth';
 import { ArpMode, ARP_RATES, FilterType, SYNC_DIVISIONS } from './boxes/effects';
 import { FM_RATIOS } from './boxes/fm-synth';
 import { createBox } from './boxes/registry';
+import { WAVES } from './boxes/wave-synth';
 import { createId } from './ids';
 import { emptyLibrary, type Library, type LibraryPreset } from './library';
 import type { BoxInstance, Preset } from './types';
@@ -32,6 +33,10 @@ function preset(
 /** FM ratio param value for a modulator multiple. */
 const ratio = (multiple: number) => FM_RATIOS.indexOf(multiple as (typeof FM_RATIOS)[number]);
 const fm = { synthType: 'synth.fm' };
+
+/** Wave synth param value for a preset wave's name. */
+const waveNamed = (name: string) => WAVES.findIndex((w) => w.name === name);
+const wave = { synthType: 'synth.wave' };
 
 const division = (label: string) => SYNC_DIVISIONS.findIndex((d) => d.label === label);
 
@@ -258,6 +263,97 @@ export function factoryLibrary(): Library {
             effects: [
               box('fx.delay', { time: division('1/4d'), feedback: 0.4, wet: 0.25 }),
               box('fx.reverb', { size: 0.85, wet: 0.35 }),
+            ],
+          },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'Wave lead',
+          { wave: waveNamed('Square'), morph: 0.3, decay: 0.35, sustain: 0.7, release: 0.12 },
+          { ...wave, effects: [box('fx.delay', { time: division('1/8d'), wet: 0.2 })] },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'Wave vocal',
+          {
+            wave: waveNamed('Vocal'),
+            morph: 0.2,
+            attack: 0.03,
+            decay: 0.5,
+            sustain: 0.8,
+            release: 0.2,
+          },
+          { ...wave, effects: [box('fx.reverb', { wet: 0.2 })] },
+        ),
+      ),
+      entry(
+        leads,
+        preset(
+          'Wave organ',
+          { wave: waveNamed('Organ'), decay: 0.1, sustain: 1, release: 0.06, level: 0.6 },
+          wave,
+        ),
+      ),
+      entry(
+        bass,
+        preset(
+          'Wave bass',
+          {
+            wave: waveNamed('Saw'),
+            decay: 0.3,
+            sustain: 0.6,
+            release: 0.06,
+            transpose: -12,
+            level: 0.85,
+          },
+          wave,
+        ),
+      ),
+      entry(
+        bass,
+        preset(
+          'Wave sine bass',
+          {
+            wave: waveNamed('Sine'),
+            morph: 0.25,
+            decay: 0.4,
+            sustain: 0.8,
+            release: 0.08,
+            transpose: -12,
+            level: 0.9,
+          },
+          wave,
+        ),
+      ),
+      entry(
+        drums,
+        preset(
+          'Wave kick',
+          {
+            wave: waveNamed('Sine'),
+            decay: 0.1,
+            sustain: 0,
+            release: 0.05,
+            transpose: -24,
+            level: 1,
+          },
+          wave,
+        ),
+      ),
+      entry(
+        fx,
+        preset(
+          'Wave bell',
+          { wave: waveNamed('Bright'), decay: 1.2, sustain: 0, release: 1, level: 0.6 },
+          {
+            ...wave,
+            effects: [
+              box('fx.delay', { time: division('1/4d'), feedback: 0.35, wet: 0.25 }),
+              box('fx.reverb', { size: 0.8, wet: 0.3 }),
             ],
           },
         ),

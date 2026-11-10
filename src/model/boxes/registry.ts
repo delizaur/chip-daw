@@ -3,12 +3,14 @@ import type { BoxInstance } from '../types';
 import { CHIP_SYNTH } from './chip-synth';
 import { ARPEGGIATOR, BITCRUSH, DELAY, FILTER, REVERB } from './effects';
 import { FM_SYNTH } from './fm-synth';
+import { WAVE_SYNTH } from './wave-synth';
 import type { BoxDescriptor, BoxKind, ParamDescriptor } from './types';
 
 /** Every box type, in the order the "add" menus list them. */
 const DESCRIPTORS: BoxDescriptor[] = [
   CHIP_SYNTH,
   FM_SYNTH,
+  WAVE_SYNTH,
   ARPEGGIATOR,
   BITCRUSH,
   FILTER,
