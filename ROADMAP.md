@@ -59,8 +59,8 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 - [x] Record automation by moving params while recording (written into the clip under the playhead; a clip is created if none)
 - [x] A knob moved while recording owns its param until recording stops (existing automation pauses; what's saved matches what was heard); a yellow line previews the moves in the recording region
 - [x] Automated knobs are marked (●) and follow the automation while playing
-- [ ] Insert/delete bars: shift all clips and tempo/meter events after a point, as one undo step
-- [ ] Tempo map UI: BPM / meter / subdivision changes; tempo automation (linear ramps)
+- [x] Insert/delete bars (select bars by Shift-dragging the ruler): shift all clips, tempo/meter events and the loop after a point, as one undo step
+- [x] Tempo lane under the ruler: tempo changes with jumps or linear ramps; time-signature changes (bars, grids, metronome and count-in follow them)
 
 ## Phase 5: Sounds and polish
 Order: the synth engines first (one at a time: FM, Game Boy, SID), then the rest of Phase 4, then the rest of Phase 5.

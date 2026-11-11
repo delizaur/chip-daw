@@ -74,7 +74,14 @@ export function validateProject(value: unknown): Project {
     }
   });
   meters.forEach((m, i) => {
-    if (!isObject(m) || !isNumber(m.tick) || !isNumber(m.numerator) || !isNumber(m.denominator)) {
+    if (
+      !isObject(m) ||
+      !isNumber(m.tick) ||
+      !isNumber(m.numerator) ||
+      !isNumber(m.denominator) ||
+      !isNumber(m.subdivision) ||
+      m.subdivision < 1
+    ) {
       fail(`tempoMap.meters[${i}]`, 'a time signature');
     }
   });

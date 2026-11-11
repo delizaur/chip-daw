@@ -38,10 +38,21 @@ describe('migrateProject', () => {
       ...v2,
       tempoMap: {
         ...v2.tempoMap,
-        meters: [{ tick: 0, numerator: 3, denominator: 4, subdivision: 16 }],
+        meters: [{ tick: 0, numerator: 3, denominator: 4, subdivision: 4 }],
       },
     };
     expect(migrateProject(waltz).loop).toEqual({ startTick: 0, endTick: 12 * PPQ });
+  });
+
+  it('format 3 → 4 turns the subdivision note value into parts per beat', () => {
+    const v3 = { ...createProject(), formatVersion: 3 };
+    const meters = [
+      { tick: 0, numerator: 4, denominator: 4, subdivision: 16 },
+      { tick: 4 * PPQ, numerator: 6, denominator: 8, subdivision: 16 },
+      { tick: 7 * PPQ, numerator: 3, denominator: 4, subdivision: 12 },
+    ];
+    const migrated = migrateProject({ ...v3, tempoMap: { ...v3.tempoMap, meters } });
+    expect(migrated.tempoMap.meters.map((m) => m.subdivision)).toEqual([4, 2, 3]);
   });
 
   it('fails clearly when a migration step is missing', () => {

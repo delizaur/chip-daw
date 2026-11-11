@@ -2,6 +2,7 @@ import { createBox, DEFAULT_SYNTH_TYPE } from './boxes/registry';
 import {
   DEFAULT_BPM,
   DEFAULT_LOOP_BARS,
+  DEFAULT_SUBDIVISION,
   DEFAULT_TRACK_COUNT,
   PROJECT_FORMAT_VERSION,
 } from './constants';
@@ -34,7 +35,12 @@ export function createTrack(index: number, presetId: string): Track {
 
 export function createProject(trackCount = DEFAULT_TRACK_COUNT): Project {
   const presets = Array.from({ length: trackCount }, () => createPreset());
-  const meter: MeterEvent = { tick: 0, numerator: 4, denominator: 4, subdivision: 16 };
+  const meter: MeterEvent = {
+    tick: 0,
+    numerator: 4,
+    denominator: 4,
+    subdivision: DEFAULT_SUBDIVISION,
+  };
   return {
     formatVersion: PROJECT_FORMAT_VERSION,
     name: 'Untitled',

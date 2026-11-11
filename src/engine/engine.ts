@@ -3,7 +3,7 @@ import type { RecordedParamMove } from '../model/automation-commands';
 import type { RecordedNote, RecordedTake } from '../model/commands';
 import { PPQ } from '../model/constants';
 import type { Project, Tick } from '../model/types';
-import { bpmAt, ticksPerBar, ticksPerBeat, ticksPerSecond } from '../model/time';
+import { barAt, bpmAt, meterAt, ticksPerBeat, ticksPerSecond } from '../model/time';
 import { SmoothedValue, softClip, volumeToGain } from './dsp';
 import { Metronome } from './metronome';
 import type { EngineToUi, UiToEngine } from './protocol';
@@ -66,6 +66,8 @@ export class Engine {
   #seekSeq = 0;
   /** Count-in ticks still to go before playback starts (0 when not counting in). */
   #countIn: Tick = 0;
+  /** The count-in's beat (of the meter at the playhead), in ticks. */
+  #countInBeat: Tick = PPQ;
   /** Length of the current count-in, in ticks. */
   #countInTotal: Tick = 0;
   /**
@@ -165,7 +167,8 @@ export class Engine {
         if (this.#playing || this.#countIn > 0) break;
         if (this.#recordArmed && this.#project) {
           // Recording from a stop: count in first (playback starts in `process`).
-          this.#countInTotal = COUNT_IN_BEATS * ticksPerBeat(this.#project.tempoMap.meters[0]!);
+          this.#countInBeat = ticksPerBeat(meterAt(this.#project.tempoMap, this.#position));
+          this.#countInTotal = COUNT_IN_BEATS * this.#countInBeat;
           this.#countIn = this.#countInTotal;
           this.#reportTransport();
           break;
@@ -371,7 +374,7 @@ export class Engine {
     let countInAccent = false;
     let lead = 0;
     if (this.#countIn > 0 && this.#project) {
-      const beat = ticksPerBeat(this.#project.tempoMap.meters[0]!);
+      const beat = this.#countInBeat;
       const elapsed = this.#countInTotal - this.#countIn;
       const nextBeat = Math.ceil(elapsed / beat - 1e-9) * beat;
       if (nextBeat < Math.min(elapsed + blockTicks, this.#countInTotal)) {
@@ -474,14 +477,16 @@ export class Engine {
     let offset = countInClick;
     let accent = countInAccent;
     if (offset < 0 && this.#metronome.enabled && this.#project) {
-      const meter = this.#project.tempoMap.meters[0]!;
+      // Beats count from the start of the meter in effect (time-signature changes sit on bars).
+      const map = this.#project.tempoMap;
+      const meter = meterAt(map, window.start);
       const beat = ticksPerBeat(meter);
-      const nextBeat = Math.ceil(window.start / beat - 1e-9) * beat;
+      const nextBeat = meter.tick + Math.ceil((window.start - meter.tick) / beat - 1e-9) * beat;
       if (nextBeat < window.end) {
         offset =
           start +
           Math.min(count - 1, Math.floor((nextBeat - window.start) / window.ticksPerSample));
-        accent = Math.round(nextBeat) % ticksPerBar(meter) === 0;
+        accent = Math.abs(barAt(map, nextBeat).start - nextBeat) < 1e-6;
       }
     }
     this.#metronome.process(left, right, start, count, offset, accent);
@@ -524,8 +529,7 @@ export class Engine {
   }
 
   #reportTransport(): void {
-    const beat = this.#project ? ticksPerBeat(this.#project.tempoMap.meters[0]!) : PPQ;
-    const countIn = this.#countIn > 0 ? Math.ceil(this.#countIn / beat - 1e-9) : 0;
+    const countIn = this.#countIn > 0 ? Math.ceil(this.#countIn / this.#countInBeat - 1e-9) : 0;
     this.#emit({
       type: 'transport',
       playing: this.#playing,

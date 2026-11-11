@@ -125,11 +125,16 @@ function createCommands(page, url, errors) {
       const box = await page.locator(selector).first().boundingBox();
       await page.mouse.dblclick(box.x + Number(x), box.y + Number(y));
     },
-    /** drag-at <css> <x1> <y1> <x2> <y2>: pointer drag between element-relative points. */
-    async 'drag-at'([selector, x1, y1, x2, y2]) {
+    /**
+     * drag-at <css> <x1> <y1> <x2> <y2> [shift|alt]: pointer drag between element-relative
+     * points, optionally holding a modifier (Shift-drag the ruler to select bars).
+     */
+    async 'drag-at'([selector, x1, y1, x2, y2, modifier]) {
       const box = await page.locator(selector).first().boundingBox();
       const from = { x: box.x + Number(x1), y: box.y + Number(y1) };
       const to = { x: box.x + Number(x2), y: box.y + Number(y2) };
+      const key = modifier ? { shift: 'Shift', alt: 'Alt' }[modifier] : undefined;
+      if (key) await page.keyboard.down(key);
       await page.mouse.move(from.x, from.y);
       await page.mouse.down();
       for (let i = 1; i <= 10; i++) {
@@ -139,6 +144,7 @@ function createCommands(page, url, errors) {
         );
       }
       await page.mouse.up();
+      if (key) await page.keyboard.up(key);
     },
     /**
      * drag <role> <name...> <dx> <dy>: pointer drag starting at the element's center.
@@ -461,7 +467,7 @@ async function smoke(c) {
   );
   check((await undoTitle()).startsWith('Undo Record'), 'the take is one undo step');
 
-  await c['drag-at'](['.timeline-canvas', '20', '164', '132', '220']);
+  await c['drag-at'](['.timeline-canvas', '20', '220', '132', '276']);
   now = await clips();
   check(
     now === `3:3840+${length}/1`,
@@ -509,7 +515,7 @@ async function smoke(c) {
     (await c.text(['.notice'])).includes('Track 3 now plays a copy'),
     'a notice explains the copy',
   );
-  await c['click-at'](['.timeline-canvas', '120', '220']); // first clip on track 4
+  await c['click-at'](['.timeline-canvas', '120', '276']); // first clip on track 4
   check((await editorKind()) === 'Clip preset', 'selecting a clip shows its clip preset');
   check(
     (await editorText('usage')) === 'Used by 2 clips',
@@ -558,7 +564,7 @@ async function smoke(c) {
 
   // Piano roll: double-click an empty lane (track 6, bar 1) to create a clip, then double-click
   // the clip to open it.
-  const lane6 = String(24 + 56 * 5 + 28);
+  const lane6 = String(80 + 56 * 5 + 28);
   await c['dblclick-at'](['.timeline-canvas', '20', lane6]);
   await c['dblclick-at'](['.timeline-canvas', '20', lane6]);
   check(
@@ -720,7 +726,7 @@ async function smoke(c) {
     'Enter opens the selected clip in the piano roll',
   );
   await c.click(['tab', 'Preset']);
-  await c['click-at'](['.timeline-canvas', '120', '220']); // the first clip on track 4
+  await c['click-at'](['.timeline-canvas', '120', '276']); // the first clip on track 4
   await c.press(['Backquote']); // clicking moved focus; the piano is still off
   await c.press(['Backquote']);
   const clipPreset = () =>
@@ -783,6 +789,58 @@ async function smoke(c) {
     (await c.attr(['aria-pressed', 'button', 'Loop'])) === 'false',
     'the Loop button toggles off',
   );
+
+  // Tempo lane and bars. The lane sits between the ruler (y < 24) and the tracks (y >= 80): its
+  // tempo line is y 24..66, the time-signature strip y 66..80. Bar B starts at x = 112·(B−1).
+  const trackTop = () =>
+    state("document.querySelector('.lane-header').getBoundingClientRect().top");
+  const shownTop = await trackTop();
+  await c.click(['button', 'Tempo', 'lane']);
+  const hiddenTop = await trackTop();
+  check(
+    (await c.attr(['aria-pressed', 'button', 'Tempo', 'lane'])) === 'false' &&
+      shownTop - hiddenTop === 56,
+    `the top bar button hides the tempo lane (tracks move up ${shownTop - hiddenTop} px)`,
+  );
+  await c.click(['button', 'Tempo', 'lane']);
+  check((await trackTop()) === shownTop, 'and shows it again');
+  const tempoMap = () =>
+    state(
+      '(() => { const m = chipDaw.session.project.tempoMap; return [m.tempos.map(t => `${t.tick}=${Math.round(t.bpm)}${t.ramp === "linear" ? "~" : ""}`).join(" "), m.meters.map(e => `${e.tick}:${e.numerator}/${e.denominator}`).join(" ")]; })()',
+    );
+  await c.press(['Home']);
+  await c['click-at'](['.timeline-canvas', '224', '30']); // bar 3, near the top: faster
+  let tm = await tempoMap();
+  check(/^0=120 7680=1\d\d$/.test(tm[0]), `clicking the tempo line adds a tempo change (${tm[0]})`);
+  await c['click-at'](['.timeline-canvas', '224', '30', 'shift']);
+  tm = await tempoMap();
+  check(tm[0].endsWith('~'), `Shift-click makes it ramp (${tm[0]})`);
+  await c['dblclick-at'](['.timeline-canvas', '340', '73']); // bar 4 in the strip
+  await c.click(['spinbutton', 'Beats', 'per', 'bar']);
+  await c.press(['Control+a']);
+  await c.type(['3']);
+  await c.select(['Subdivision', '|', '3']);
+  await c.click(['button', 'Set']);
+  tm = await tempoMap();
+  check(tm[1] === '0:4/4 11520:3/4', `the time-signature strip sets 3/4 from bar 4 (${tm[1]})`);
+  const sub = await state('chipDaw.session.project.tempoMap.meters[1].subdivision');
+  check(sub === 3, `the popup sets the subdivision (triplets: ${sub} per beat)`);
+  const clipsBefore = await clips();
+  await c['drag-at'](['.timeline-canvas', '120', '10', '230', '10', 'shift']); // bars 2-3
+  const selected = await state('JSON.stringify(chipDaw.session.barSelection)');
+  check(
+    selected === '{"startTick":3840,"endTick":11520}',
+    `Shift-dragging the ruler selects whole bars (${selected})`,
+  );
+  await c.click(['button', 'Delete', 'bars']);
+  tm = await tempoMap();
+  check(tm[1] === '0:4/4 3840:3/4', `deleting 2 bars moves the 3/4 back with the music (${tm[1]})`);
+  check((await undoTitle()).startsWith('Undo Delete bars'), 'deleting bars is one undo step');
+  await c.press(['Control+z']);
+  check((await clips()) === clipsBefore, 'undo brings the bars and clips back');
+  for (let i = 0; i < 3; i++) await c.press(['Control+z']); // the meter, the ramp, the tempo
+  tm = await tempoMap();
+  check(tm.join(' | ') === '0=120 | 0:4/4', `and the tempo map back (${tm.join(' | ')})`);
 
   // Files: export, start a new project, import it back; autosave survives a reload.
   await c['export-file'](['tmp/run-chip-daw/smoke.chip']);

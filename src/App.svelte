@@ -52,6 +52,10 @@
       'mod+c': () => session.copySelection(),
       'mod+v': () => session.paste(),
       'mod+d': () => session.duplicateSelection(),
+      // Bars: the ones selected on the ruler (Shift-drag), or the bar at the playhead.
+      'mod+i': () => session.insertBars(),
+      'mod+delete': () => session.deleteBars(),
+      'mod+backspace': () => session.deleteBars(),
       // Piano roll: transpose / move selected notes. With the keyboard piano off, otherwise
       // select the neighbouring clip. Unhandled otherwise (keeps scrolling).
       arrowup: arrow(() => session.nudgeNotes(1, 0), 'up'),

@@ -38,7 +38,8 @@ import { targetFor } from '../../model/automation';
 import type { RecordedParamMove } from '../../model/automation-commands';
 import { constrainParam, getParamDescriptor } from '../../model/boxes/registry';
 import { findPresetById, presetUsage, type PresetTarget } from '../../model/presets';
-import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
+import { deleteBars, insertBars } from '../../model/tempo-commands';
+import { barAt, bpmAt, ticksPerSecond } from '../../model/time';
 import type { BoxInstance, Clip, Note, Preset, Project, Tick, Track } from '../../model/types';
 import { Autosaver, loadAutosave } from '../../persistence/autosave';
 import {
@@ -189,6 +190,8 @@ class Session {
   recordArmed = $state(false);
   overdub = $state(false);
   metronome = $state(false);
+  /** Whether the arrangement shows the tempo lane (tempo and time-signature changes). */
+  tempoLaneVisible = $state(true);
   /** Loop on: playback jumps from the loop end (project.loop) back to its start. */
   loopEnabled = $state(false);
   /** Last position reported by (or sent to) the engine. See `playheadAt` for a smooth value. */
@@ -202,6 +205,8 @@ class Session {
 
   // Clip selection and clipboard (not undoable).
   selectedClipIds = $state.raw<ReadonlySet<string>>(new Set());
+  /** Whole bars selected on the ruler (Shift-drag), for inserting or deleting bars. */
+  barSelection = $state.raw<{ startTick: Tick; endTick: Tick } | null>(null);
   /** Copied clips, each with its preset (in case the original is gone when pasting). */
   #clipboard: { trackOffset: number; clip: Clip; preset: Preset | undefined }[] = [];
 
@@ -592,9 +597,43 @@ class Session {
   createEmptyClip(trackIndex: number, startTick: Tick): void {
     const track = this.project.tracks[trackIndex];
     if (!track) return;
-    const bar = ticksPerBar(this.project.tempoMap.meters[0]!);
-    const clip = createClip(startTick, bar, track.presetId);
+    const bar = barAt(this.project.tempoMap, startTick);
+    const clip = createClip(startTick, bar.start + bar.length - startTick, track.presetId);
     this.#placeAndSelect([{ trackId: track.id, clip }], 'Add clip');
+  }
+
+  // --- Bars ----------------------------------------------------------------------------------
+
+  /** The bars Insert/Delete act on: the selection, or the bar under the playhead. */
+  get barRange(): { startTick: Tick; endTick: Tick; count: number } {
+    const map = this.project.tempoMap;
+    const range =
+      this.barSelection ??
+      (() => {
+        const bar = barAt(map, this.position);
+        return { startTick: bar.start, endTick: bar.start + bar.length };
+      })();
+    const count = barAt(map, range.endTick - 1).index - barAt(map, range.startTick).index + 1;
+    return { ...range, count };
+  }
+
+  /** Inserts as many empty bars as are selected (or one) where the selection starts. */
+  insertBars(): void {
+    const { startTick, endTick, count } = this.barRange;
+    this.run(insertBars(startTick, endTick - startTick));
+    const at = barAt(this.project.tempoMap, startTick).index + 1;
+    this.showNotice(`Inserted ${count === 1 ? 'a bar' : `${count} bars`} at bar ${at}`);
+  }
+
+  /** Deletes the selected bars (or the one under the playhead), closing the gap. */
+  deleteBars(): void {
+    const { startTick, endTick, count } = this.barRange;
+    const at = barAt(this.project.tempoMap, startTick).index + 1;
+    this.run(deleteBars(startTick, endTick));
+    this.barSelection = null;
+    if (this.position > startTick)
+      this.seek(Math.max(startTick, this.position - (endTick - startTick)));
+    this.showNotice(`Deleted ${count === 1 ? `bar ${at}` : `${count} bars from bar ${at}`}`);
   }
 
   // --- Keyboard navigation ---------------------------------------------------------------
@@ -893,6 +932,7 @@ class Session {
   clearSelection(): void {
     if (this.#notesFocused()) this.selectedNoteIds = new Set();
     else this.selectedClipIds = new Set();
+    this.barSelection = null;
   }
 
   #addNotesAndSelect(notes: Note[], label: string): void {
@@ -911,6 +951,7 @@ class Session {
     this.liveTake = null;
     this.selectedClipIds = new Set();
     this.selectedNoteIds = new Set();
+    this.barSelection = null;
     this.editingClip = null;
     this.bottomTab = 'preset';
     this.selectedTrackIndex = 0;

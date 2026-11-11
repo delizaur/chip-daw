@@ -39,7 +39,10 @@ export interface MeterEvent {
   tick: Tick;
   numerator: number;
   denominator: number;
-  /** Default grid subdivision, as a note value (16 = sixteenth notes). */
+  /**
+   * How the grid divides a beat: 4 by default (sixteenths in x/4), 3 for triplets, 5 for
+   * quintuplets... One of SUBDIVISIONS.
+   */
   subdivision: number;
 }
 

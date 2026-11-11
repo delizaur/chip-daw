@@ -2,13 +2,15 @@
   Transport: go to start, play/pause, record, overdub, metronome, tempo and position.
 -->
 <script lang="ts">
-  import { MAX_BPM, MIN_BPM, setTempo } from '../../model/commands';
-  import { formatPosition } from '../../model/time';
+  import { MAX_BPM, MIN_BPM } from '../../model/commands';
+  import { setTempoAt } from '../../model/tempo-commands';
+  import { bpmAt, formatPosition, meterAt } from '../../model/time';
   import Toggle from '../controls/Toggle.svelte';
   import { session } from '../state/session.svelte';
 
-  const bpm = $derived(session.project.tempoMap.tempos[0]?.bpm ?? 120);
-  const meter = $derived(session.project.tempoMap.meters[0]!);
+  /** Tempo and time signature at the playhead (they can change along the song). */
+  const bpm = $derived(Math.round(bpmAt(session.project.tempoMap, session.position) * 100) / 100);
+  const meter = $derived(meterAt(session.project.tempoMap, session.position));
   const position = $derived(formatPosition(session.project.tempoMap, session.position));
   /** Playing, or counting in before recording. */
   const running = $derived(session.playing || session.countIn > 0);
@@ -16,8 +18,9 @@
   function commitTempo(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const value = Number(input.value);
-    if (Number.isFinite(value) && value > 0) session.run(setTempo(value));
-    input.value = String(session.project.tempoMap.tempos[0]?.bpm ?? 120);
+    // Edits the tempo in effect at the playhead.
+    if (Number.isFinite(value) && value > 0) session.run(setTempoAt(session.position, value));
+    input.value = String(bpm);
   }
 
   function onTempoKey(event: KeyboardEvent) {
@@ -77,7 +80,10 @@
     onchange={() => session.toggleLoop()}>LOOP</Toggle
   >
 
-  <label class="tempo" title="Tempo (BPM)">
+  <label
+    class="tempo"
+    title="Tempo at the playhead (BPM); tempo changes are edited in the tempo lane"
+  >
     <input
       type="number"
       aria-label="Tempo"
@@ -90,7 +96,17 @@
     />
     <span>BPM</span>
   </label>
-  <span class="readout" title="Time signature">{meter.numerator}/{meter.denominator}</span>
+  <Toggle
+    size="small"
+    label="Tempo lane"
+    title="Show or hide the tempo lane (tempo and time-signature changes along the song)"
+    color="var(--c-orange)"
+    pressed={session.tempoLaneVisible}
+    onchange={(shown) => (session.tempoLaneVisible = shown)}>♩↗</Toggle
+  >
+  <span class="readout" title="Time signature at the playhead"
+    >{meter.numerator}/{meter.denominator}</span
+  >
   <span class="readout position" aria-label="Position">{position}</span>
 </div>
 

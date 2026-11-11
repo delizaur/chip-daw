@@ -30,7 +30,7 @@
   import { createId } from '../../model/ids';
   import { findPresetById } from '../../model/presets';
   import { addNotes, quantizeNotes, updateNotes, type NoteChange } from '../../model/note-commands';
-  import { floorTo, snapTick } from '../../model/time';
+  import { floorInMeter, meterAt, snapInMeter, ticksPerBeat } from '../../model/time';
   import type { AutomationPoint, AutomationTarget, Note, Tick } from '../../model/types';
   import { prepareCanvas } from '../canvas';
   import Segmented from '../controls/Segmented.svelte';
@@ -75,7 +75,19 @@
   let fittedClipId: string | null = null;
 
   const editing = $derived(session.editing);
-  const meter = $derived(session.project.tempoMap.meters[0]!);
+  const tempoMap = $derived(session.project.tempoMap);
+
+  /**
+   * Grid choices: note values, plus the clip's meter subdivision of a beat when it isn't one of
+   * them (e.g. "÷3" for triplets, "÷5" for quintuplets; set with the time signature).
+   */
+  const grids = $derived.by(() => {
+    const meter = meterAt(tempoMap, editing?.clip.startTick ?? 0);
+    const sub = ticksPerBeat(meter) / meter.subdivision;
+    return GRIDS.some((g) => g.value === sub)
+      ? GRIDS
+      : [...GRIDS, { value: sub, label: `÷${meter.subdivision}` }];
+  });
 
   // --- Bottom lane: velocity or automation ---------------------------------------------------
 
@@ -231,9 +243,9 @@
   }
 
   const snap = (tick: Tick, event: MouseEvent) =>
-    event.altKey ? Math.round(tick) : snapTick(tick, session.pianoRollGrid);
+    event.altKey ? Math.round(tick) : snapInMeter(tempoMap, tick, session.pianoRollGrid);
   const floorSnap = (tick: Tick, event: MouseEvent) =>
-    event.altKey ? Math.round(tick) : floorTo(tick, session.pianoRollGrid);
+    event.altKey ? Math.round(tick) : floorInMeter(tempoMap, tick, session.pianoRollGrid);
 
   // Fit the view whenever a different clip is opened (or the canvas first gets a size).
   $effect(() => {
@@ -255,7 +267,7 @@
       lane: laneScene,
       clip: editing.clip,
       color: trackColor(editing.trackIndex),
-      meter,
+      tempoMap,
       view,
       grid: session.pianoRollGrid,
       width,
@@ -657,7 +669,7 @@
     <span class="label">Grid</span>
     <Segmented
       label="Grid"
-      options={GRIDS}
+      options={grids}
       value={session.pianoRollGrid}
       color="var(--c-blue)"
       onchange={(grid) => (session.pianoRollGrid = grid)}

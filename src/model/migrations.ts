@@ -1,4 +1,10 @@
-import { DEFAULT_LOOP_BARS, PPQ, PROJECT_FORMAT_VERSION } from './constants';
+import {
+  DEFAULT_LOOP_BARS,
+  DEFAULT_SUBDIVISION,
+  PPQ,
+  PROJECT_FORMAT_VERSION,
+  SUBDIVISIONS,
+} from './constants';
 import { createId } from './ids';
 import type { Project } from './types';
 
@@ -68,12 +74,35 @@ function addLoopRegion(project: Json): Json {
 }
 
 /**
+ * Format 3 → 4 (editable subdivisions): a meter's `subdivision` was a note value (16 =
+ * sixteenths); it becomes how many parts a beat is divided into (16 in 4/4 → 4; in 6/8 → 2),
+ * the nearest allowed value.
+ */
+function subdivisionsPerBeat(project: Json): Json {
+  const tempoMap = isObject(project.tempoMap) ? project.tempoMap : null;
+  if (!tempoMap || !Array.isArray(tempoMap.meters)) return project;
+  const meters = tempoMap.meters.map((meter: unknown) => {
+    if (!isObject(meter)) return meter;
+    const noteValue = typeof meter.subdivision === 'number' ? meter.subdivision : 16;
+    const denominator = typeof meter.denominator === 'number' ? meter.denominator : 4;
+    const parts = noteValue / Math.max(1, denominator);
+    const nearest = SUBDIVISIONS.reduce<number>(
+      (best, value) => (Math.abs(value - parts) < Math.abs(best - parts) ? value : best),
+      DEFAULT_SUBDIVISION,
+    );
+    return { ...meter, subdivision: nearest };
+  });
+  return { ...project, tempoMap: { ...tempoMap, meters } };
+}
+
+/**
  * `migrations[n]` upgrades a project from format version n to n + 1.
  * When bumping PROJECT_FORMAT_VERSION, add an entry here and a test with an old fixture.
  */
 const migrations: Record<number, Migration> = {
   1: presetsByReference,
   2: addLoopRegion,
+  3: subdivisionsPerBeat,
 };
 
 export class ProjectFormatError extends Error {}

@@ -1,8 +1,19 @@
-import { ticksPerBar, ticksPerBeat } from '../../model/time';
-import type { Clip, LoopRegion, MeterEvent, Tick, Track } from '../../model/types';
+import { barsBetween, ticksPerBeat } from '../../model/time';
+import type { Clip, LoopRegion, TempoMap, Tick, Track } from '../../model/types';
 import { colorResolver, roundRect, type ColorResolver } from '../canvas';
 import { trackColor } from '../theme';
-import { LANE_HEIGHT, laneTop, RULER_HEIGHT, tickToX, type TimelineView } from './geometry';
+import {
+  LANE_HEIGHT,
+  laneTop,
+  RULER_HEIGHT,
+  TEMPO_LINE_HEIGHT,
+  tempoY,
+  tickToX,
+  TRACKS_TOP,
+  xToTick,
+  type TempoRange,
+  type TimelineView,
+} from './geometry';
 
 /** A clip drawn somewhere other than where the project has it (while dragging). */
 export interface ClipGhost {
@@ -16,9 +27,18 @@ export interface ClipGhost {
 
 export interface TimelineScene {
   tracks: readonly Track[];
+  /** Tempo and time-signature changes (the grid, ruler and tempo lane follow them). */
+  tempoMap: TempoMap;
+  /** Where the track lanes start: under the tempo lane, or the ruler when it's hidden. */
+  tracksTop: number;
+  /** Whether the tempo lane is shown. */
+  tempoLane: boolean;
+  /** The BPM range the tempo line shows (held still while dragging a point). */
+  tempoRange: TempoRange;
+  /** Bars selected on the ruler (for inserting or deleting bars). */
+  barSelection: { startTick: Tick; endTick: Tick } | null;
   /** Preset id → name, to label clips with their preset. */
   presetNames: ReadonlyMap<string, string>;
-  meter: MeterEvent;
   view: TimelineView;
   width: number;
   height: number;
@@ -69,7 +89,7 @@ function drawClip(
   const x = tickToX(scene.view, startTick);
   const w = Math.max(2, lengthTicks * scene.view.pixelsPerTick);
   if (x > scene.width || x + w < 0) return;
-  const y = laneTop(trackIndex) + 3;
+  const y = laneTop(trackIndex, scene.tracksTop) + 3;
   const h = LANE_HEIGHT - 6;
 
   ctx.save();
@@ -146,7 +166,7 @@ function drawTake(
   const w = tickToX(view, playhead) - x;
   if (w <= 0) return;
   for (const trackIndex of take.trackIndices) {
-    const y = laneTop(trackIndex) + 3;
+    const y = laneTop(trackIndex, scene.tracksTop) + 3;
     const h = LANE_HEIGHT - 6;
     ctx.fillStyle = color('var(--c-red)');
     ctx.globalAlpha = 0.3;
@@ -227,13 +247,85 @@ function drawLoop(
   ctx.restore();
 }
 
+/**
+ * The tempo lane: the tempo as a line through its points (a point holds until the next one,
+ * or ramps to it), each labelled with its BPM; under it, the time-signature strip with a
+ * marker where each meter starts.
+ */
+function drawTempoLane(
+  ctx: CanvasRenderingContext2D,
+  scene: TimelineScene,
+  color: ColorResolver,
+  mono: string,
+) {
+  const { view, width, tempoMap, tempoRange } = scene;
+  const tempos = tempoMap.tempos;
+  const accent = color('var(--c-orange)');
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, RULER_HEIGHT, width, TRACKS_TOP - RULER_HEIGHT);
+  ctx.clip();
+
+  // The tempo line.
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  tempos.forEach((tempo, i) => {
+    const x = tickToX(view, tempo.tick);
+    const y = tempoY(tempo.bpm, tempoRange);
+    if (i === 0) ctx.moveTo(x, y);
+    const next = tempos[i + 1];
+    if (!next) {
+      ctx.lineTo(width, y);
+    } else if (tempo.ramp === 'linear') {
+      ctx.lineTo(tickToX(view, next.tick), tempoY(next.bpm, tempoRange));
+    } else {
+      ctx.lineTo(tickToX(view, next.tick), y);
+      ctx.lineTo(tickToX(view, next.tick), tempoY(next.bpm, tempoRange));
+    }
+  });
+  ctx.stroke();
+
+  // Points, with their BPM.
+  ctx.font = `9px ${mono}`;
+  ctx.textBaseline = 'middle';
+  for (const tempo of tempos) {
+    const x = tickToX(view, tempo.tick);
+    const y = tempoY(tempo.bpm, tempoRange);
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color('var(--screen-ink)');
+    const label = `${Math.round(tempo.bpm * 100) / 100}${tempo.ramp === 'linear' ? ' ↗' : ''}`;
+    const below = y < RULER_HEIGHT + TEMPO_LINE_HEIGHT / 2;
+    ctx.fillText(label, x + 6, below ? y + 7 : y - 7);
+  }
+
+  // Time-signature strip.
+  const stripTop = RULER_HEIGHT + TEMPO_LINE_HEIGHT;
+  ctx.fillStyle = color('var(--screen-line)');
+  ctx.fillRect(0, stripTop, width, 1);
+  ctx.textBaseline = 'middle';
+  for (const meter of tempoMap.meters) {
+    const x = Math.round(tickToX(view, meter.tick));
+    if (x > width) break;
+    ctx.fillStyle = color('var(--c-blue)');
+    ctx.fillRect(x, stripTop + 2, 2, TRACKS_TOP - stripTop - 4);
+    ctx.fillStyle = color('var(--screen-ink)');
+    ctx.fillText(`${meter.numerator}/${meter.denominator}`, x + 5, stripTop + 7.5);
+  }
+  ctx.restore();
+}
+
 export function drawTimeline(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   scene: TimelineScene,
 ) {
   const color = colorResolver(canvas);
-  const { view, width, height, meter } = scene;
+  const { view, width, height, tempoMap } = scene;
+  const top = scene.tracksTop;
   ctx.clearRect(0, 0, width, height);
 
   // Lanes.
@@ -243,11 +335,11 @@ export function drawTimeline(
     if (i === scene.selectedTrack) {
       ctx.fillStyle = color(trackColor(i));
       ctx.globalAlpha = 0.07;
-      ctx.fillRect(0, laneTop(i), width, LANE_HEIGHT);
+      ctx.fillRect(0, laneTop(i, top), width, LANE_HEIGHT);
       ctx.globalAlpha = 1;
     }
     ctx.fillStyle = color('var(--screen-line)');
-    ctx.fillRect(0, laneTop(i + 1) - 1, width, 1);
+    ctx.fillRect(0, laneTop(i + 1, top) - 1, width, 1);
   });
 
   // Loop region: a faint tint behind the clips.
@@ -256,30 +348,58 @@ export function drawTimeline(
     const x2 = tickToX(view, scene.loop.endTick);
     ctx.fillStyle = color('var(--c-yellow)');
     ctx.globalAlpha = 0.06;
+    ctx.fillRect(x1, top, x2 - x1, height - top);
+    ctx.globalAlpha = 1;
+  }
+
+  // The tempo lane's background (its contents are drawn over the grid).
+  if (scene.tempoLane) {
+    ctx.fillStyle = color('var(--screen-raised)');
+    ctx.fillRect(0, RULER_HEIGHT, width, top - RULER_HEIGHT);
+  }
+
+  // Bars selected on the ruler: a band there, faint over the tracks.
+  if (scene.barSelection) {
+    const x1 = tickToX(view, scene.barSelection.startTick);
+    const x2 = tickToX(view, scene.barSelection.endTick);
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.2;
+    ctx.fillRect(x1, 0, x2 - x1, RULER_HEIGHT);
+    ctx.globalAlpha = 0.05;
     ctx.fillRect(x1, RULER_HEIGHT, x2 - x1, height - RULER_HEIGHT);
     ctx.globalAlpha = 1;
   }
 
-  // Grid: bars always, beats when there's room.
-  const bar = ticksPerBar(meter);
-  const beat = ticksPerBeat(meter);
-  const showBeats = beat * view.pixelsPerTick >= 10;
-  const step = showBeats ? beat : bar;
-  const first = Math.floor(view.scrollTick / step) * step;
-  ctx.font = `10px ${getComputedStyle(canvas).getPropertyValue('--font-mono')}`;
+  // Grid: a line at every bar (following time-signature changes), beats when there's room.
+  const mono = getComputedStyle(canvas).getPropertyValue('--font-mono');
+  ctx.font = `10px ${mono}`;
   ctx.textBaseline = 'middle';
-  for (let tick = first; tickToX(view, tick) < width; tick += step) {
-    const x = Math.round(tickToX(view, tick)) + 0.5;
-    const isBar = Math.round(tick) % bar === 0;
-    ctx.fillStyle = color(isBar ? 'var(--screen-line-strong)' : 'var(--screen-line)');
-    ctx.fillRect(x - 0.5, isBar ? 0 : RULER_HEIGHT, 1, height);
-    if (isBar) {
-      ctx.fillStyle = color('var(--screen-ink-dim)');
-      ctx.fillText(String(Math.round(tick / bar) + 1), x + 4, RULER_HEIGHT / 2);
+  for (const bar of barsBetween(tempoMap, xToTick(view, 0), xToTick(view, width))) {
+    const beat = ticksPerBeat(bar.meter);
+    if (beat * view.pixelsPerTick >= 10) {
+      // Beats, and the meter's subdivision (faint) when there's room for it.
+      const sub = beat / Math.max(1, bar.meter.subdivision);
+      const step = sub * view.pixelsPerTick >= 12 ? sub : beat;
+      for (let k = 1; bar.start + k * step < bar.start + bar.length - 1; k++) {
+        const onBeat = Math.abs((k * step) / beat - Math.round((k * step) / beat)) < 1e-6;
+        ctx.fillStyle = color('var(--screen-line)');
+        ctx.globalAlpha = onBeat ? 1 : 0.45;
+        ctx.fillRect(Math.round(tickToX(view, bar.start + k * step)), top, 1, height);
+      }
+      ctx.globalAlpha = 1;
     }
+    const x = Math.round(tickToX(view, bar.start)) + 0.5;
+    ctx.fillStyle = color('var(--screen-line-strong)');
+    ctx.fillRect(x - 0.5, 0, 1, height);
+    ctx.fillStyle = color('var(--screen-ink-dim)');
+    ctx.fillText(String(bar.index + 1), x + 4, RULER_HEIGHT / 2);
   }
   ctx.fillStyle = color('var(--screen-line-strong)');
   ctx.fillRect(0, RULER_HEIGHT - 1, width, 1);
+  if (scene.tempoLane) {
+    ctx.fillRect(0, top - 1, width, 1);
+    drawTempoLane(ctx, scene, color, mono);
+  }
 
   // Clips.
   const moving = new Set(scene.ghosts?.map((g) => g.clip.id));

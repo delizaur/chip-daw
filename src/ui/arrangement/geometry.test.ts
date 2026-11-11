@@ -5,16 +5,18 @@ import { createTrack } from '../../model/defaults';
 import {
   gridTicks,
   hitTest,
+  tempoRange,
   loopMarkerAt,
   LANE_HEIGHT,
   RULER_HEIGHT,
+  TRACKS_TOP,
   tickToX,
   xToTick,
   zoomAround,
   type TimelineView,
 } from './geometry';
 
-const meter = { tick: 0, numerator: 4, denominator: 4, subdivision: 16 };
+const meter = { tick: 0, numerator: 4, denominator: 4, subdivision: 4 };
 const view: TimelineView = { pixelsPerTick: 32 / PPQ, scrollTick: 0 }; // 32 px per beat
 
 function tracks() {
@@ -34,11 +36,23 @@ describe('timeline geometry', () => {
     expect(gridTicks({ ...view, pixelsPerTick: 80 / PPQ }, meter)).toBe(PPQ / 4);
     expect(gridTicks(view, meter)).toBe(PPQ);
     expect(gridTicks({ ...view, pixelsPerTick: 4 / PPQ }, meter)).toBe(4 * PPQ);
+    // Zoomed in, the grid is the meter's subdivision of a beat: thirds for triplets.
+    const triplets = { ...meter, subdivision: 3 };
+    expect(gridTicks({ ...view, pixelsPerTick: 80 / PPQ }, triplets)).toBe(PPQ / 3);
+  });
+
+  it('hits the tempo lane, and the tracks right under the ruler when it is hidden', () => {
+    const t = tracks();
+    expect(hitTest(t, view, 10, RULER_HEIGHT + 5)).toMatchObject({ kind: 'tempo', part: 'line' });
+    expect(hitTest(t, view, 10, TRACKS_TOP - 3)).toMatchObject({ kind: 'tempo', part: 'meter' });
+    expect(hitTest(t, view, 100, RULER_HEIGHT + 5, RULER_HEIGHT)).toMatchObject({
+      kind: 'clip',
+    });
   });
 
   it('hits the ruler, lanes, clips and clip edges', () => {
     const t = tracks();
-    const laneY = RULER_HEIGHT + LANE_HEIGHT / 2;
+    const laneY = TRACKS_TOP + LANE_HEIGHT / 2;
     expect(hitTest(t, view, 10, 5)).toMatchObject({ kind: 'ruler' });
     expect(hitTest(t, view, 10, laneY)).toMatchObject({ kind: 'lane', trackIndex: 0 });
     expect(hitTest(t, view, 100, laneY)).toMatchObject({ kind: 'clip', edge: null });
@@ -73,5 +87,19 @@ describe('loop markers', () => {
     const short = { startTick: PPQ, endTick: PPQ + PPQ / 4 }; // 8 px apart
     expect(loopMarkerAt(view, short, 33, 10)).toBe('start');
     expect(loopMarkerAt(view, short, 39, 10)).toBe('end');
+  });
+});
+
+describe('tempo line range', () => {
+  const at = (...bpms: number[]) =>
+    tempoRange(bpms.map((bpm, i) => ({ tick: i, bpm, ramp: 'step' })));
+
+  it('stays at 60-180 BPM for usual tempos, so adding a point does not rescale the line', () => {
+    expect(at(120)).toEqual({ low: 60, high: 180 });
+    expect(at(120, 139)).toEqual({ low: 60, high: 180 });
+  });
+
+  it('widens for tempos beyond it', () => {
+    expect(at(40, 250)).toEqual({ low: 30, high: 260 });
   });
 });

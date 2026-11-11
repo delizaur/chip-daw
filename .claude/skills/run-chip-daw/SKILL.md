@@ -141,9 +141,17 @@ notes, else clips): `Delete`/`Backspace`, `Control+a`, `Control+c`/`v`/`d`; in t
 `ArrowUp`/`ArrowDown` transpose (Shift: octave), `ArrowLeft`/`ArrowRight` move by the grid.
 `Control+s` export, `Control+o` import.
 
-Timeline canvas (`.timeline-canvas`, default zoom): ruler `y` 0–24, track `N` (0-based) lane
-centre `y = 24 + 56·N + 28`, `x = 112` px per bar (28 px per beat), so bar `B` (1-based) starts at
-`x = 112·(B−1)`. Read clip state with `eval chipDaw.session.project.tracks.flatMap(...)`.
+Timeline canvas (`.timeline-canvas`, default zoom): ruler `y` 0–24 (Shift-drag selects bars), tempo
+lane `y` 24–80 when shown (toggle button `Tempo lane` in the top bar; shown by default): tempo line
+24–66 (click adds a point, Shift-click toggles its ramp, double-click deletes); time-signature strip
+66–80 (double-click opens the editor with spinbutton `Beats per bar`, comboboxes `Beat value` and
+`Subdivision` (parts per beat: 3 for triplets...), buttons `Set`, `Delete`, `Cancel`). Track `N`
+(0-based) lane centre `y = 80 + 56·N + 28` (with the tempo lane hidden, `24 + 56·N + 28`),
+`x = 112` px per bar of 4/4 (28 px per beat), so bar `B` (1-based) starts at `x = 112·(B−1)` while
+the song is in 4/4. Buttons `Insert bars` / `Delete bars` (corner; Ctrl+I, Ctrl+Delete) act on
+`chipDaw.session.barSelection`, or the bar at the playhead. Read clip state with
+`eval chipDaw.session.project.tracks.flatMap(...)` and the tempo map with
+`eval chipDaw.session.project.tempoMap`.
 
 Piano roll canvas (`.piano-roll-canvas`, 1440×300 at the default viewport): it opens fitted to
 the clip, so for a clip of `L` ticks with no notes, `x(tick) = 56 + tick·(W − 68)/L` (tick

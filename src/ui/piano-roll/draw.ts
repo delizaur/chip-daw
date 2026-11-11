@@ -1,7 +1,7 @@
 import { isSteppedParam } from '../../model/automation';
 import type { ParamDescriptor } from '../../model/boxes/types';
-import { ticksPerBar, ticksPerBeat } from '../../model/time';
-import type { AutomationPoint, Clip, MeterEvent, Tick } from '../../model/types';
+import { barsBetween, ticksPerBeat } from '../../model/time';
+import type { AutomationPoint, Clip, TempoMap, Tick } from '../../model/types';
 import { colorResolver, roundRect, type ColorResolver } from '../canvas';
 import { formatParam } from '../controls/format';
 import { noteName } from '../input/computer-keyboard';
@@ -41,7 +41,8 @@ export interface RollScene {
   lane: LaneScene;
   clip: Clip;
   color: string;
-  meter: MeterEvent;
+  /** Bars and beats follow its time-signature changes. */
+  tempoMap: TempoMap;
   view: RollView;
   grid: Tick;
   width: number;
@@ -58,7 +59,12 @@ export function drawPianoRoll(
   scene: RollScene,
 ) {
   const color = colorResolver(canvas);
-  const { clip, view, width, height, meter } = scene;
+  const { clip, view, width, height, tempoMap } = scene;
+  const bars = barsBetween(
+    tempoMap,
+    view.scrollTick,
+    view.scrollTick + (width - KEYS_WIDTH) / view.pixelsPerTick,
+  );
   const laneHeight = laneHeightOf(scene.lane);
   const gridBottom = height - laneHeight;
   const clipStart = clip.startTick;
@@ -92,27 +98,25 @@ export function drawPianoRoll(
   if (left > KEYS_WIDTH) ctx.fillRect(KEYS_WIDTH, RULER_HEIGHT, left - KEYS_WIDTH, gridBottom);
   if (right < width) ctx.fillRect(right, RULER_HEIGHT, width - right, gridBottom);
 
-  // Vertical grid: bars, beats and the snap grid.
-  const bar = ticksPerBar(meter);
-  const beat = ticksPerBeat(meter);
-  const step = scene.grid * view.pixelsPerTick >= 6 ? scene.grid : beat;
-  for (
-    let tick = Math.floor(view.scrollTick / step) * step;
-    tickToX(view, tick) < width;
-    tick += step
-  ) {
-    const x = Math.round(tickToX(view, tick)) + 0.5;
-    const t = Math.round(tick);
-    ctx.fillStyle = color(
-      t % bar === 0
-        ? 'var(--screen-ink-dim)'
-        : t % beat === 0
-          ? 'var(--screen-line-strong)'
-          : 'var(--screen-line)',
-    );
-    ctx.globalAlpha = t % bar === 0 ? 0.5 : 1;
-    ctx.fillRect(x - 0.5, RULER_HEIGHT, 1, height);
-    ctx.globalAlpha = 1;
+  // Vertical grid: bars, beats and the snap grid (following time-signature changes).
+  for (const bar of bars) {
+    const beat = ticksPerBeat(bar.meter);
+    const step = scene.grid * view.pixelsPerTick >= 6 ? scene.grid : beat;
+    for (let offset = 0; offset < bar.length - 1e-6; offset += step) {
+      const x = Math.round(tickToX(view, bar.start + offset)) + 0.5;
+      const onBar = offset === 0;
+      const onBeat = Math.abs(offset / beat - Math.round(offset / beat)) < 1e-6;
+      ctx.fillStyle = color(
+        onBar
+          ? 'var(--screen-ink-dim)'
+          : onBeat
+            ? 'var(--screen-line-strong)'
+            : 'var(--screen-line)',
+      );
+      ctx.globalAlpha = onBar ? 0.5 : 1;
+      ctx.fillRect(x - 0.5, RULER_HEIGHT, 1, height);
+      ctx.globalAlpha = 1;
+    }
   }
 
   // Notes: brightness follows velocity; notes hidden outside the clip are faint.
@@ -166,17 +170,13 @@ export function drawPianoRoll(
   ctx.fillRect(0, 0, width, RULER_HEIGHT);
   ctx.font = `10px ${mono}`;
   ctx.textBaseline = 'middle';
-  for (
-    let tick = Math.floor(view.scrollTick / bar) * bar;
-    tickToX(view, tick) < width;
-    tick += bar
-  ) {
-    const x = Math.round(tickToX(view, tick)) + 0.5;
+  for (const bar of bars) {
+    const x = Math.round(tickToX(view, bar.start)) + 0.5;
     if (x < KEYS_WIDTH) continue;
     ctx.fillStyle = color('var(--screen-line-strong)');
     ctx.fillRect(x - 0.5, 0, 1, RULER_HEIGHT);
     ctx.fillStyle = color('var(--screen-ink-dim)');
-    ctx.fillText(String(Math.round(tick / bar) + 1), x + 4, RULER_HEIGHT / 2);
+    ctx.fillText(String(bar.index + 1), x + 4, RULER_HEIGHT / 2);
   }
   ctx.fillStyle = color('var(--screen-line-strong)');
   ctx.fillRect(0, RULER_HEIGHT - 1, width, 1);
@@ -293,17 +293,13 @@ function drawAutomationLane(
   ctx.rect(KEYS_WIDTH, laneTop, width - KEYS_WIDTH, AUTOMATION_HEIGHT);
   ctx.clip();
   // Bar and beat lines, like the note grid, to place points by eye.
-  const bar = ticksPerBar(scene.meter);
-  const beat = ticksPerBeat(scene.meter);
-  for (
-    let tick = Math.floor(view.scrollTick / beat) * beat;
-    tickToX(view, tick) < width;
-    tick += beat
-  ) {
-    ctx.fillStyle = color(
-      Math.round(tick) % bar === 0 ? 'var(--screen-line-strong)' : 'var(--screen-line)',
-    );
-    ctx.fillRect(Math.round(tickToX(view, tick)), laneTop, 1, AUTOMATION_HEIGHT);
+  const end = view.scrollTick + (width - KEYS_WIDTH) / view.pixelsPerTick;
+  for (const bar of barsBetween(scene.tempoMap, view.scrollTick, end)) {
+    const beat = ticksPerBeat(bar.meter);
+    for (let offset = 0; offset < bar.length - 1e-6; offset += beat) {
+      ctx.fillStyle = color(offset === 0 ? 'var(--screen-line-strong)' : 'var(--screen-line)');
+      ctx.fillRect(Math.round(tickToX(view, bar.start + offset)), laneTop, 1, AUTOMATION_HEIGHT);
+    }
   }
   // Range guides at the top and bottom of the value range.
   ctx.fillStyle = color('var(--screen-line)');
