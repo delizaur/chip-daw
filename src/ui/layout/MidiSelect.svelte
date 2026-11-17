@@ -99,7 +99,7 @@
     color: var(--ink-dim);
     font: inherit;
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
   }
 

@@ -309,6 +309,11 @@
     return () => observer.disconnect();
   });
 
+  // Canvas text drawn before the web font loaded used the fallback: redraw once it's in.
+  $effect(() => {
+    void document.fonts?.ready.then(() => themeVersion++);
+  });
+
   $effect(() => {
     const element = canvas;
     if (!element) return;
@@ -751,7 +756,7 @@
 
   .label {
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-dim);
@@ -771,7 +776,7 @@
     background: var(--panel-raised);
     box-shadow: var(--shadow-raised);
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
   }
 
   .tool:disabled {

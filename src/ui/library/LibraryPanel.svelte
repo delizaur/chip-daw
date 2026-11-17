@@ -227,7 +227,7 @@
     padding: 0 var(--space-2);
     border-radius: var(--r-s);
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     color: var(--ink-dim);
   }
 
@@ -247,7 +247,7 @@
     border: 1px dashed var(--ink-dim);
     border-radius: var(--r-m);
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
     color: var(--ink-dim);
   }
 
@@ -301,7 +301,7 @@
   }
 
   .folder .name {
-    font-weight: 700;
+    font-weight: 500;
   }
 
   .preset:not(.nested) .name {
@@ -328,7 +328,7 @@
   }
 
   .loaded {
-    font-size: 8px;
+    font-size: 10px;
     color: var(--c-green);
   }
 
@@ -367,7 +367,7 @@
     background: var(--panel-raised);
     box-shadow: var(--shadow-raised);
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: 500;
   }
 
   .actions .primary {

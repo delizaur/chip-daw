@@ -16,6 +16,7 @@
   import Knob from '../controls/Knob.svelte';
   import Segmented from '../controls/Segmented.svelte';
   import { session } from '../state/session.svelte';
+  import EffectScreen from './EffectScreen.svelte';
   import SynthScreen from './SynthScreen.svelte';
   import { waveIcon } from './synth-visuals';
 
@@ -99,7 +100,7 @@
 
   /** The box as its controls show it (recorded or automated moves included), for the screen. */
   const shownBox = $derived(
-    descriptor && isSynth
+    descriptor
       ? { ...box, params: Object.fromEntries(descriptor.params.map((p) => [p.id, shown(p)])) }
       : box,
   );
@@ -163,7 +164,11 @@
 
   {#if descriptor}
     <div class="body">
-      {#if isSynth}<SynthScreen box={shownBox} colors={knobColors} />{/if}
+      {#if isSynth}
+        <SynthScreen box={shownBox} colors={knobColors} />
+      {:else}
+        <EffectScreen box={shownBox} colors={knobColors} />
+      {/if}
       <div class="params">
         <div class="enums">
           {#each enumParams as param (param.id)}
@@ -251,7 +256,7 @@
   h3,
   .type {
     font-size: var(--text-m);
-    font-weight: 800;
+    font-weight: 600;
   }
 
   .type {
@@ -273,7 +278,7 @@
     border-radius: var(--r-pill);
     background: var(--panel-sunken);
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-dim);
@@ -349,7 +354,7 @@
   .param-label {
     min-width: 36px;
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--ink-dim);
@@ -364,7 +369,7 @@
     color: var(--ink);
     font: inherit;
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
   }
 
   .knobs {

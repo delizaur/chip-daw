@@ -108,7 +108,7 @@
     padding: 5px var(--space-3) 0;
     border-bottom: 1px solid var(--line);
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-dim);
@@ -146,7 +146,7 @@
     color: var(--ink-on-color);
     font-family: var(--font-mono);
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
   }
 
   .volume {

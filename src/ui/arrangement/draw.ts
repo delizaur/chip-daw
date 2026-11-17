@@ -116,7 +116,7 @@ function drawClip(
     ctx.clip();
     ctx.globalAlpha = style === 'dimmed' ? 0.25 : 0.8;
     ctx.fillStyle = '#ffffff';
-    ctx.font = `600 9px ${scene.font}`;
+    ctx.font = `500 11px ${scene.font}`;
     ctx.textBaseline = 'middle';
     ctx.fillText(name, x + 5, y + 2 + LABEL_HEIGHT / 2);
     ctx.restore();
@@ -287,7 +287,7 @@ function drawTempoLane(
   ctx.stroke();
 
   // Points, with their BPM.
-  ctx.font = `9px ${mono}`;
+  ctx.font = `11px ${mono}`;
   ctx.textBaseline = 'middle';
   for (const tempo of tempos) {
     const x = tickToX(view, tempo.tick);
@@ -372,7 +372,7 @@ export function drawTimeline(
 
   // Grid: a line at every bar (following time-signature changes), beats when there's room.
   const mono = getComputedStyle(canvas).getPropertyValue('--font-mono');
-  ctx.font = `10px ${mono}`;
+  ctx.font = `11px ${mono}`;
   ctx.textBaseline = 'middle';
   for (const bar of barsBetween(tempoMap, xToTick(view, 0), xToTick(view, width))) {
     const beat = ticksPerBeat(bar.meter);

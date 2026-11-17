@@ -162,7 +162,7 @@
 
   .label {
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-dim);

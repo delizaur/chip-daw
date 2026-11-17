@@ -18,6 +18,7 @@
   --ink-dim: #8e8c98;
   --ink-on-color: #ffffff;
   --line: rgb(235 230 255 / 0.12);
+  --line-strong: rgb(235 230 255 / 0.24);
 
   /* Screen (center area: dark in both themes, like the OP-1 display) */
   --screen: #060508;
@@ -42,12 +43,14 @@
   --focus: var(--c-blue);
 
   /* Type */
-  --font-ui: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Tall, thin and geometric, like the OP-1's screen lettering. Self-hosted (see main.ts). */
+  --font-ui: 'Barlow Semi Condensed', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
-  --text-xs: 10px;
-  --text-s: 12px;
-  --text-m: 14px;
-  --text-l: 18px;
+  /* A size up from a regular sans: the condensed face runs small. */
+  --text-xs: 12px;
+  --text-s: 14px;
+  --text-m: 16px;
+  --text-l: 22px;
 
   /* Shape and space */
   /* Sharp corners everywhere (round things, like knobs, stay round with 50%). */
@@ -76,6 +79,7 @@
   --ink: #1b1b1d;
   --ink-dim: #73716b;
   --line: rgb(0 0 0 / 0.1);
+  --line-strong: rgb(0 0 0 / 0.22);
   --screen: #121214;
   --screen-raised: #1c1c1f;
   --shadow-raised: inset 0 0 0 1px var(--line);

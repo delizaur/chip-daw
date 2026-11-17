@@ -284,6 +284,11 @@
     return () => observer.disconnect();
   });
 
+  // Canvas text drawn before the web font loaded used the fallback: redraw once it's in.
+  $effect(() => {
+    void document.fonts?.ready.then(() => themeVersion++);
+  });
+
   // Wheel: needs a non-passive listener to stop the page from scrolling/zooming.
   $effect(() => {
     const element = canvas;
@@ -788,7 +793,7 @@
 
   .tempo-label {
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--c-orange);
@@ -805,7 +810,7 @@
     padding: 0 var(--space-1);
     border-radius: var(--r-s);
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: 500;
     color: var(--screen-ink-dim);
   }
 
@@ -846,7 +851,7 @@
     height: 24px;
     padding: 0 var(--space-2);
     border-radius: var(--r-s);
-    font-weight: 600;
+    font-weight: 500;
   }
 
   .meter-edit .primary {
@@ -860,7 +865,7 @@
   }
 
   .meter-title {
-    font-weight: 700;
+    font-weight: 500;
     margin-right: var(--space-1);
   }
 
@@ -936,7 +941,7 @@
 
   .name {
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
   }
 
   .preset {
@@ -965,7 +970,7 @@
     color: #fff;
     font-family: var(--font-mono);
     font-size: 48px;
-    font-weight: 800;
+    font-weight: 600;
     pointer-events: none;
   }
 

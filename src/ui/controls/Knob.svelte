@@ -48,6 +48,8 @@
   const FINE_FACTOR = 6;
   const START_ANGLE = -135;
   const SWEEP = 270;
+  /** Scale ticks: the ends and the middle. */
+  const TICKS = [0, 0.5, 1];
 
   const range = $derived({ min, max, step, scale });
   const normalized = $derived(toNormalized(value, min, max, scale));
@@ -134,19 +136,25 @@
     {ondblclick}
     {onkeydown}
   >
+    <!-- OP-1 style gauge: hairline scale with ticks, the value as a colored arc, an outline
+         ring and a needle. -->
     <svg viewBox="0 0 100 100" aria-hidden="true">
-      <path class="track" d={arc(START_ANGLE, START_ANGLE + SWEEP, 42)} />
+      <path class="track" d={arc(START_ANGLE, START_ANGLE + SWEEP, 44)} />
+      {#each TICKS as tick (tick)}
+        <line
+          class="tick"
+          x1={polar(START_ANGLE + SWEEP * tick, 44)[0]}
+          y1={polar(START_ANGLE + SWEEP * tick, 44)[1]}
+          x2={polar(START_ANGLE + SWEEP * tick, 36)[0]}
+          y2={polar(START_ANGLE + SWEEP * tick, 36)[1]}
+        />
+      {/each}
       {#if normalized > 0.001}
-        <path class="fill" d={arc(START_ANGLE, angle, 42)} />
+        <path class="fill" d={arc(START_ANGLE, angle, 44)} />
       {/if}
-      <circle class="cap" cx="50" cy="50" r="30" />
-      <line
-        class="notch"
-        x1={polar(angle, 12)[0]}
-        y1={polar(angle, 12)[1]}
-        x2={polar(angle, 24)[0]}
-        y2={polar(angle, 24)[1]}
-      />
+      <circle class="ring" cx="50" cy="50" r="26" />
+      <line class="needle" x1="50" y1="50" x2={polar(angle, 34)[0]} y2={polar(angle, 34)[1]} />
+      <circle class="hub" cx="50" cy="50" r="6" />
     </svg>
   </div>
   <div class="label">
@@ -187,37 +195,48 @@
   .track,
   .fill {
     fill: none;
-    stroke-width: 8;
-    stroke-linecap: round;
   }
 
   .track {
-    stroke: var(--panel-sunken);
+    stroke: var(--line-strong);
+    stroke-width: 2;
+  }
+
+  .tick {
+    stroke: var(--line-strong);
+    stroke-width: 2;
   }
 
   .fill {
     stroke: var(--color);
+    stroke-width: 5;
   }
 
-  .cap {
-    fill: var(--color);
-    transition: transform 80ms ease-out;
-    transform-origin: 50px 50px;
+  .ring {
+    fill: none;
+    stroke: var(--color);
+    stroke-width: 3;
+    transition: fill 80ms ease-out;
   }
 
-  .dragging .cap {
-    transform: scale(0.94);
+  .dragging .ring,
+  .dial:focus-visible .ring {
+    fill: color-mix(in srgb, var(--color) 20%, transparent);
   }
 
-  .notch {
-    stroke: var(--ink-on-color);
-    stroke-width: 6;
+  .needle {
+    stroke: var(--ink);
+    stroke-width: 3;
     stroke-linecap: round;
+  }
+
+  .hub {
+    fill: var(--color);
   }
 
   .label {
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--ink-dim);
@@ -229,8 +248,8 @@
   }
 
   .value {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
+    font-size: var(--text-s);
+    font-variant-numeric: tabular-nums;
     color: var(--ink);
   }
 </style>

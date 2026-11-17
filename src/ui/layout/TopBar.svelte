@@ -154,7 +154,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
     color: var(--ink-dim);
   }
 
@@ -164,7 +164,7 @@
     padding: 0 var(--space-2);
     border-radius: var(--r-s);
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
     color: var(--ink);
   }
 
@@ -215,7 +215,7 @@
   .wordmark {
     margin-left: var(--space-2);
     font-size: var(--text-m);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
   }
 
@@ -228,7 +228,7 @@
     border-radius: var(--r-pill);
     background: var(--panel-sunken);
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
     color: var(--ink-dim);
   }
 

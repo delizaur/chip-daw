@@ -88,7 +88,7 @@
     padding: 0 var(--space-3);
     border-radius: var(--r-s);
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
     color: var(--ink-dim);
   }
 

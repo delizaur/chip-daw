@@ -168,7 +168,7 @@ export function drawPianoRoll(
 
   ctx.fillStyle = color('var(--screen)');
   ctx.fillRect(0, 0, width, RULER_HEIGHT);
-  ctx.font = `10px ${mono}`;
+  ctx.font = `11px ${mono}`;
   ctx.textBaseline = 'middle';
   for (const bar of bars) {
     const x = Math.round(tickToX(view, bar.start)) + 0.5;
@@ -194,7 +194,7 @@ export function drawPianoRoll(
   ctx.beginPath();
   ctx.rect(0, RULER_HEIGHT, KEYS_WIDTH, gridBottom - RULER_HEIGHT);
   ctx.clip();
-  ctx.font = `9px ${mono}`;
+  ctx.font = `10px ${mono}`;
   for (let pitch = view.topPitch; pitchToY(view, pitch) < gridBottom && pitch >= 0; pitch--) {
     const y = pitchToY(view, pitch);
     const black = isBlackKey(pitch);
@@ -261,7 +261,7 @@ function drawVelocityLane(
   }
   ctx.restore();
   ctx.fillStyle = color('var(--screen-ink-dim)');
-  ctx.font = `9px ${mono}`;
+  ctx.font = `11px ${mono}`;
   ctx.textBaseline = 'top';
   ctx.fillText('VEL', 8, gridBottom + 6);
 }
@@ -368,7 +368,7 @@ function drawAutomationLane(
   ctx.restore();
 
   // Labels: the lane's name, and the value range in the key column.
-  ctx.font = `9px ${mono}`;
+  ctx.font = `11px ${mono}`;
   ctx.textBaseline = 'top';
   ctx.fillStyle = color('var(--screen-ink-dim)');
   ctx.fillText(

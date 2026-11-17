@@ -63,7 +63,7 @@
     padding: 0 var(--space-3);
     border-radius: var(--r-s) var(--r-s) 0 0;
     font-size: var(--text-s);
-    font-weight: 700;
+    font-weight: 500;
     color: var(--ink-dim);
   }
 

@@ -2,6 +2,10 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import { libraryStore } from './ui/state/library.svelte';
 import { session } from './ui/state/session.svelte';
+import '@fontsource/barlow-semi-condensed/latin-300.css';
+import '@fontsource/barlow-semi-condensed/latin-400.css';
+import '@fontsource/barlow-semi-condensed/latin-500.css';
+import '@fontsource/barlow-semi-condensed/latin-600.css';
 import './ui/styles/tokens.css';
 import './ui/styles/global.css';
 

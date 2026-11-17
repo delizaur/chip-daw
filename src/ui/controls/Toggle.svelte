@@ -52,7 +52,7 @@
     border-radius: var(--r-s);
     background: var(--panel-raised);
     box-shadow: var(--shadow-raised);
-    font-weight: 700;
+    font-weight: 500;
     color: var(--ink-dim);
     transition:
       background 80ms,

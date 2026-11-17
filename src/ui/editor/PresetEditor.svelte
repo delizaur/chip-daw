@@ -210,7 +210,7 @@
     color: var(--ink-on-color);
     font-family: var(--font-mono);
     font-size: var(--text-s);
-    font-weight: 700;
+    font-weight: 500;
   }
 
   /* A clip preset: outlined, like a clip on the timeline. */
@@ -236,7 +236,7 @@
     color: var(--ink);
     font: inherit;
     font-size: var(--text-m);
-    font-weight: 800;
+    font-weight: 600;
     text-overflow: ellipsis;
   }
 
@@ -252,12 +252,12 @@
 
   .mixed-title {
     font-size: var(--text-m);
-    font-weight: 800;
+    font-weight: 600;
   }
 
   .kind {
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color);
@@ -270,7 +270,7 @@
 
   .recording {
     font-size: var(--text-xs);
-    font-weight: 700;
+    font-weight: 500;
     color: var(--c-red);
   }
 
@@ -286,7 +286,7 @@
   .back {
     padding: 2px 0;
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: 500;
     color: var(--ink-dim);
     text-align: left;
   }
@@ -336,7 +336,7 @@
     color: var(--ink-dim);
     font: inherit;
     font-size: var(--text-s);
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
   }
 
