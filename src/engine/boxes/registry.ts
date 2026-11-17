@@ -1,3 +1,4 @@
+import { ANALOG_SYNTH } from '../../model/boxes/analog-synth';
 import { CHIP_SYNTH } from '../../model/boxes/chip-synth';
 import { ARPEGGIATOR, BITCRUSH, DELAY, FILTER, REVERB } from '../../model/boxes/effects';
 import { FM_SYNTH } from '../../model/boxes/fm-synth';
@@ -7,6 +8,7 @@ import { Bitcrush } from '../effects/bitcrush';
 import { Delay } from '../effects/delay';
 import { Filter } from '../effects/filter';
 import { Reverb } from '../effects/reverb';
+import { AnalogSynth } from './analog-synth';
 import { Arpeggiator } from './arpeggiator';
 import { ChipSynth } from './chip-synth';
 import { FmSynth } from './fm-synth';
@@ -27,6 +29,7 @@ export const SYNTH_FACTORIES: Readonly<Record<string, SynthFactory>> = {
   [FM_SYNTH.type]: (sampleRate) => new FmSynth(sampleRate),
   [WAVE_SYNTH.type]: (sampleRate) => new WaveSynth(sampleRate),
   [SID_SYNTH.type]: (sampleRate) => new SidSynth(sampleRate),
+  [ANALOG_SYNTH.type]: (sampleRate) => new AnalogSynth(sampleRate),
 };
 
 export const EFFECT_FACTORIES: Readonly<Record<string, EffectFactory>> = {

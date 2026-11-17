@@ -20,6 +20,11 @@ export interface ParamDescriptor {
    * 'Hz' (frequency).
    */
   unit?: 's' | '%' | 'st' | 'ct' | 'Hz';
+  /**
+   * Section of the box this param is shown in (e.g. "Osc", "Filter"). Boxes with many params
+   * group them; params of a box without groups are shown together.
+   */
+  group?: string;
 }
 
 /**

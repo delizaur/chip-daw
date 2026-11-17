@@ -1,5 +1,6 @@
 import { createId } from '../ids';
 import type { BoxInstance } from '../types';
+import { ANALOG_SYNTH } from './analog-synth';
 import { CHIP_SYNTH } from './chip-synth';
 import { ARPEGGIATOR, BITCRUSH, DELAY, FILTER, REVERB } from './effects';
 import { FM_SYNTH } from './fm-synth';
@@ -13,6 +14,7 @@ const DESCRIPTORS: BoxDescriptor[] = [
   FM_SYNTH,
   WAVE_SYNTH,
   SID_SYNTH,
+  ANALOG_SYNTH,
   ARPEGGIATOR,
   BITCRUSH,
   FILTER,

@@ -58,6 +58,7 @@
       aria-checked={option.value === value}
       tabindex={option.value === value ? 0 : -1}
       {disabled}
+      class:icon={option.icon}
       aria-label={option.icon ? option.label : undefined}
       title={option.icon ? option.label : undefined}
       onclick={() => onchange(option.value)}
@@ -90,6 +91,11 @@
     font-size: var(--text-s);
     font-weight: 500;
     color: var(--ink-dim);
+  }
+
+  button.icon {
+    min-width: 34px;
+    padding: 0 var(--space-2);
   }
 
   button[aria-checked='true'] {

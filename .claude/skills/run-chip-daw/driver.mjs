@@ -881,7 +881,7 @@ async function smoke(c) {
     );
   check(
     (await libraryNames()) ===
-      'FM bass, FM slap bass, Pulse bass, SID bass, SID pulse bass, Triangle bass, Triangle bass, Wave bass, Wave sine bass',
+      'Acid bass, FM bass, FM slap bass, Moog bass, Pulse bass, Reese bass, SID bass, SID pulse bass, Triangle bass, Triangle bass, Wave bass, Wave sine bass, Wobble bass',
     `the track's preset saves into the library (${await libraryNames()})`,
   );
   await c.click(['button', 'Rename', 'preset']);
