@@ -131,7 +131,7 @@ export function drawPianoRoll(
     const selected = scene.selected.has(note.id);
     ctx.globalAlpha = hidden ? 0.25 : 0.45 + (note.velocity / 127) * 0.55;
     ctx.fillStyle = trackColor;
-    roundRect(ctx, x + 0.5, y + 1, w - 1, ROW_HEIGHT - 2, 3);
+    roundRect(ctx, x + 0.5, y + 1, w - 1, ROW_HEIGHT - 2, 0);
     ctx.fill();
     ctx.globalAlpha = hidden ? 0.25 : 1;
     ctx.lineWidth = selected ? 2 : 1;

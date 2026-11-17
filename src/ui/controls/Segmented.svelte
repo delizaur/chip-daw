@@ -5,6 +5,8 @@
   interface Option {
     value: T;
     label: string;
+    /** An SVG path in a 24×12 box, shown instead of the label (which stays the name). */
+    icon?: string;
   }
 
   interface Props {
@@ -56,9 +58,17 @@
       aria-checked={option.value === value}
       tabindex={option.value === value ? 0 : -1}
       {disabled}
+      aria-label={option.icon ? option.label : undefined}
+      title={option.icon ? option.label : undefined}
       onclick={() => onchange(option.value)}
     >
-      {option.label}
+      {#if option.icon}
+        <svg viewBox="0 0 24 12" width="24" height="12" aria-hidden="true"
+          ><path d={option.icon} /></svg
+        >
+      {:else}
+        {option.label}
+      {/if}
     </button>
   {/each}
 </div>
@@ -76,7 +86,7 @@
     min-width: var(--hit);
     height: calc(var(--hit) - 6px);
     padding: 0 var(--space-3);
-    border-radius: calc(var(--r-m) - 3px);
+    border-radius: var(--r-s);
     font-size: var(--text-s);
     font-weight: 600;
     color: var(--ink-dim);
@@ -85,6 +95,19 @@
   button[aria-checked='true'] {
     background: var(--color);
     color: var(--ink-on-color);
+  }
+
+  svg {
+    display: block;
+    margin: auto;
+    overflow: visible;
+  }
+
+  path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
   }
 
   button:disabled {

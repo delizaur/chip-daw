@@ -154,7 +154,7 @@
     bottom: 3px;
     left: calc(var(--n) * (100% - 6px));
     width: 6px;
-    border-radius: 3px;
+    border-radius: var(--r-s);
     background: var(--color);
     box-shadow: 0 0 0 2px var(--panel);
     pointer-events: none;

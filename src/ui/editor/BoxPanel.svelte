@@ -16,6 +16,8 @@
   import Knob from '../controls/Knob.svelte';
   import Segmented from '../controls/Segmented.svelte';
   import { session } from '../state/session.svelte';
+  import SynthScreen from './SynthScreen.svelte';
+  import { waveIcon } from './synth-visuals';
 
   interface Props {
     box: BoxInstance;
@@ -44,7 +46,25 @@
   const address = $derived({ target, boxId: box.id });
 
   const options = (param: ParamDescriptor) =>
-    (param.steps ?? []).map((label, i) => ({ value: param.min + i * (param.step ?? 1), label }));
+    (param.steps ?? []).map((label, i) => {
+      const value = param.min + i * (param.step ?? 1);
+      return { value, label, icon: waveIcon(box.type, param.id, value) };
+    });
+
+  /**
+   * The envelope knobs have the same colors on every synth (attack blue, decay green, sustain
+   * pink, release orange), matching the stages on the synth screen; the rest cycle.
+   */
+  const ENVELOPE_COLORS: Record<string, string> = {
+    attack: 'var(--c-blue)',
+    decay: 'var(--c-green)',
+    sustain: 'var(--c-pink)',
+    release: 'var(--c-orange)',
+  };
+  const knobColor = (i: number) =>
+    ENVELOPE_COLORS[knobParams[i]?.id ?? ''] ?? KNOB_COLORS[i % KNOB_COLORS.length]!;
+  /** Param id → its knob's color: the synth screen draws each envelope stage in it. */
+  const knobColors = $derived(new Map(knobParams.map((p, i) => [p.id, knobColor(i)])));
 
   /** While recording, moves are recorded as automation instead of changing the preset. */
   const recording = $derived(session.recordingKnobs);
@@ -76,6 +96,13 @@
     (recording ? session.liveParamValue(box.id, param.id) : undefined) ??
     automated(param) ??
     paramValue(box, param);
+
+  /** The box as its controls show it (recorded or automated moves included), for the screen. */
+  const shownBox = $derived(
+    descriptor && isSynth
+      ? { ...box, params: Object.fromEntries(descriptor.params.map((p) => [p.id, shown(p)])) }
+      : box,
+  );
 </script>
 
 <article class="box" class:bypassed={box.bypassed} aria-label="{name} {descriptor?.kind ?? 'box'}">
@@ -135,58 +162,63 @@
   </header>
 
   {#if descriptor}
-    <div class="params">
-      <div class="enums">
-        {#each enumParams as param (param.id)}
-          <div class="enum">
-            <span class="param-label"
-              >{#if automation.has(param.id)}<span class="mark" title={AUTOMATED} aria-hidden="true"
-                  >●</span
-                >{/if}{param.name}</span
-            >
-            {#if (param.steps?.length ?? 0) > MAX_SEGMENTS}
-              <select
-                class="param-select"
-                aria-label={param.name}
-                value={shown(param)}
-                onchange={(event) =>
-                  set(param, Number((event.currentTarget as HTMLSelectElement).value))}
+    <div class="body">
+      {#if isSynth}<SynthScreen box={shownBox} colors={knobColors} />{/if}
+      <div class="params">
+        <div class="enums">
+          {#each enumParams as param (param.id)}
+            <div class="enum">
+              <span class="param-label"
+                >{#if automation.has(param.id)}<span
+                    class="mark"
+                    title={AUTOMATED}
+                    aria-hidden="true">●</span
+                  >{/if}{param.name}</span
               >
-                {#each options(param) as option (option.value)}
-                  <option value={option.value}>{option.label}</option>
-                {/each}
-              </select>
-            {:else}
-              <Segmented
-                label={param.name}
-                options={options(param)}
-                value={shown(param)}
-                color="var(--c-blue)"
-                onchange={(v) => set(param, v)}
-              />
-            {/if}
-          </div>
-        {/each}
-      </div>
-      <div class="knobs">
-        {#each knobParams as param, i (param.id)}
-          <Knob
-            label={param.name}
-            mark={automation.has(param.id) ? AUTOMATED : undefined}
-            value={shown(param)}
-            min={param.min}
-            max={param.max}
-            defaultValue={param.default}
-            step={param.step}
-            scale={param.scale}
-            color={KNOB_COLORS[i % KNOB_COLORS.length]}
-            size={44}
-            format={(v) => formatParam(param, v)}
-            onstart={() => session.begin(`Change ${param.name}`)}
-            oninput={(v) => set(param, v)}
-            onend={() => session.commit()}
-          />
-        {/each}
+              {#if (param.steps?.length ?? 0) > MAX_SEGMENTS}
+                <select
+                  class="param-select"
+                  aria-label={param.name}
+                  value={shown(param)}
+                  onchange={(event) =>
+                    set(param, Number((event.currentTarget as HTMLSelectElement).value))}
+                >
+                  {#each options(param) as option (option.value)}
+                    <option value={option.value}>{option.label}</option>
+                  {/each}
+                </select>
+              {:else}
+                <Segmented
+                  label={param.name}
+                  options={options(param)}
+                  value={shown(param)}
+                  color="var(--c-blue)"
+                  onchange={(v) => set(param, v)}
+                />
+              {/if}
+            </div>
+          {/each}
+        </div>
+        <div class="knobs">
+          {#each knobParams as param, i (param.id)}
+            <Knob
+              label={param.name}
+              mark={automation.has(param.id) ? AUTOMATED : undefined}
+              value={shown(param)}
+              min={param.min}
+              max={param.max}
+              defaultValue={param.default}
+              step={param.step}
+              scale={param.scale}
+              color={knobColor(i)}
+              size={44}
+              format={(v) => formatParam(param, v)}
+              onstart={() => session.begin(`Change ${param.name}`)}
+              oninput={(v) => set(param, v)}
+              onend={() => session.commit()}
+            />
+          {/each}
+        </div>
       </div>
     </div>
   {:else}
@@ -283,6 +315,11 @@
 
   .actions .power.on {
     color: var(--c-green);
+  }
+
+  .body {
+    display: flex;
+    gap: var(--space-4);
   }
 
   .params {

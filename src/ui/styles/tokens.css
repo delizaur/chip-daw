@@ -1,6 +1,7 @@
 /*
- * Design tokens. OP-1 inspired: dark chrome, an even darker "screen" for the arrangement,
- * and a small set of bright, flat accent colors.
+ * Design tokens. OP-1 inspired: high contrast like its OLED screen (near-black with a faint
+ * violet tint, near-white ink), thin lines instead of shadows, sharp corners, and a small set
+ * of bright, flat accent colors.
  *
  * Dark is the default theme. A light "aluminium" theme is available with
  * <html data-theme="light"> (no UI switch yet).
@@ -9,22 +10,22 @@
   color-scheme: dark;
 
   /* Chrome */
-  --bg: #222225;
-  --panel: #2b2b2f;
-  --panel-raised: #343439;
-  --panel-sunken: #1d1d20;
-  --ink: #efefec;
-  --ink-dim: #9a9a9f;
+  --bg: #08070a;
+  --panel: #0b0a0e;
+  --panel-raised: #121117;
+  --panel-sunken: #050407;
+  --ink: #f1f0f4;
+  --ink-dim: #8e8c98;
   --ink-on-color: #ffffff;
-  --line: rgb(255 255 255 / 0.08);
+  --line: rgb(235 230 255 / 0.12);
 
   /* Screen (center area: dark in both themes, like the OP-1 display) */
-  --screen: #0d0d0f;
-  --screen-raised: #18181b;
-  --screen-line: rgb(255 255 255 / 0.07);
-  --screen-line-strong: rgb(255 255 255 / 0.14);
-  --screen-ink: #f0f0ee;
-  --screen-ink-dim: #85858b;
+  --screen: #060508;
+  --screen-raised: #0e0d12;
+  --screen-line: rgb(235 230 255 / 0.07);
+  --screen-line-strong: rgb(235 230 255 / 0.16);
+  --screen-ink: #f1f0f4;
+  --screen-ink-dim: #8e8c98;
 
   /* Accents */
   --c-blue: #3a7bf5;
@@ -49,10 +50,11 @@
   --text-l: 18px;
 
   /* Shape and space */
-  --r-s: 6px;
-  --r-m: 10px;
-  --r-l: 16px;
-  --r-pill: 999px;
+  /* Sharp corners everywhere (round things, like knobs, stay round with 50%). */
+  --r-s: 0;
+  --r-m: 0;
+  --r-l: 0;
+  --r-pill: 0;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -61,7 +63,8 @@
   /** Minimum touch target. */
   --hit: 40px;
 
-  --shadow-raised: 0 1px 0 rgb(0 0 0 / 0.4);
+  /* Raised surfaces get a hairline outline instead of a shadow, like lines on a screen. */
+  --shadow-raised: inset 0 0 0 1px var(--line);
 }
 
 :root[data-theme='light'] {
@@ -75,5 +78,5 @@
   --line: rgb(0 0 0 / 0.1);
   --screen: #121214;
   --screen-raised: #1c1c1f;
-  --shadow-raised: 0 1px 0 rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
+  --shadow-raised: inset 0 0 0 1px var(--line);
 }

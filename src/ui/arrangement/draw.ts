@@ -94,7 +94,7 @@ function drawClip(
 
   ctx.save();
   ctx.globalAlpha = style === 'dimmed' ? 0.25 : 1;
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 5);
+  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 0);
   ctx.fillStyle = color;
   const bright = style === 'selected' || style === 'affected' || style === 'ghost';
   ctx.globalAlpha *= bright ? 0.55 : 0.32;
@@ -170,7 +170,7 @@ function drawTake(
     const h = LANE_HEIGHT - 6;
     ctx.fillStyle = color('var(--c-red)');
     ctx.globalAlpha = 0.3;
-    roundRect(ctx, x, y, w, h, 5);
+    roundRect(ctx, x, y, w, h, 0);
     ctx.fill();
     ctx.globalAlpha = 1;
 
