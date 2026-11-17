@@ -192,6 +192,11 @@ class Session {
   metronome = $state(false);
   /** Whether the arrangement shows the tempo lane (tempo and time-signature changes). */
   tempoLaneVisible = $state(true);
+  /**
+   * Vertical scroll of the track rows, shared by the arrangement and the tracks sidebar so the
+   * mixer rows stay level with their lanes.
+   */
+  trackScrollTop = $state(0);
   /** Loop on: playback jumps from the loop end (project.loop) back to its start. */
   loopEnabled = $state(false);
   /** Last position reported by (or sent to) the engine. See `playheadAt` for a smooth value. */

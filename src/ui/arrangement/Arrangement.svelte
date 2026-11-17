@@ -54,6 +54,13 @@
 
   let canvas: HTMLCanvasElement | undefined = $state();
   let width = $state(0);
+  let scroller: HTMLDivElement | undefined = $state();
+
+  // Follow scrolling done in the tracks sidebar (it shares session.trackScrollTop).
+  $effect(() => {
+    const top = session.trackScrollTop;
+    if (scroller && Math.abs(scroller.scrollTop - top) >= 1) scroller.scrollTop = top;
+  });
   let view = $state<TimelineView>({ pixelsPerTick: DEFAULT_PIXELS_PER_TICK, scrollTick: 0 });
   let ghosts = $state.raw<ClipGhost[] | null>(null);
   /** Bumped when something outside Svelte's knowledge (the theme) changes the drawing. */
@@ -593,7 +600,13 @@
   style:--tempo-height="{TEMPO_LANE_HEIGHT}px"
   style:--lane-height="{LANE_HEIGHT}px"
 >
-  <div class="scroller">
+  <div
+    class="scroller"
+    bind:this={scroller}
+    onscroll={() => {
+      if (scroller) session.trackScrollTop = scroller.scrollTop;
+    }}
+  >
     <div class="headers">
       <div class="zoom">
         <div class="bar-tools">
@@ -644,7 +657,10 @@
           onclick={() => session.selectTrack(i)}
         >
           <span class="number">{i + 1}</span>
-          <span class="name">{track.name}</span>
+          <span class="text">
+            <span class="name">{track.name}</span>
+            <span class="preset">{presetNames.get(track.presetId) ?? '—'}</span>
+          </span>
         </button>
       {/each}
     </div>
@@ -905,12 +921,27 @@
     color: var(--color);
   }
 
-  .name {
-    font-size: var(--text-s);
-    font-weight: 600;
+  .text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .name,
+  .preset {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .name {
+    font-size: var(--text-s);
+    font-weight: 600;
+  }
+
+  .preset {
+    font-size: var(--text-xs);
+    color: var(--screen-ink-dim);
   }
 
   .timeline {
