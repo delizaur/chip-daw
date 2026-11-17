@@ -30,9 +30,29 @@
     }
     select.value = '';
   }
+
+  let editor: HTMLElement | undefined = $state();
+
+  // The chain runs sideways: a plain mouse wheel scrolls it horizontally. Needs a non-passive
+  // listener to stop the wheel's default (vertical) scroll.
+  $effect(() => {
+    const element = editor;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+      if (element.scrollWidth <= element.clientWidth) return;
+      event.preventDefault();
+      // Lines (Firefox) to pixels.
+      const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 40 : 1;
+      element.scrollLeft += event.deltaY * scale;
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  });
 </script>
 
 <section
+  bind:this={editor}
   class="preset-editor"
   aria-label="Preset editor"
   style:--color={trackColor(view?.trackIndex ?? 0)}
