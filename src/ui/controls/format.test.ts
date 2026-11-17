@@ -32,6 +32,7 @@ describe('formatParam', () => {
     expect(formatParam(hz, 440.4)).toBe('440 Hz');
     expect(formatParam(hz, 2000)).toBe('2.00 kHz');
     expect(formatParam(hz, 12500)).toBe('12.5 kHz');
+    expect(formatParam(hz, 2.5)).toBe('2.5 Hz'); // slow rates (an LFO's) keep a decimal
   });
 
   it('uses step labels for enum params', () => {

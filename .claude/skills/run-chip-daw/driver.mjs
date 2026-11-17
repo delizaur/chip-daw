@@ -125,11 +125,16 @@ function createCommands(page, url, errors) {
       const box = await page.locator(selector).first().boundingBox();
       await page.mouse.dblclick(box.x + Number(x), box.y + Number(y));
     },
-    /** drag-at <css> <x1> <y1> <x2> <y2>: pointer drag between element-relative points. */
-    async 'drag-at'([selector, x1, y1, x2, y2]) {
+    /**
+     * drag-at <css> <x1> <y1> <x2> <y2> [shift|alt]: pointer drag between element-relative
+     * points, optionally holding a modifier (Shift-drag the ruler to select bars).
+     */
+    async 'drag-at'([selector, x1, y1, x2, y2, modifier]) {
       const box = await page.locator(selector).first().boundingBox();
       const from = { x: box.x + Number(x1), y: box.y + Number(y1) };
       const to = { x: box.x + Number(x2), y: box.y + Number(y2) };
+      const key = modifier ? { shift: 'Shift', alt: 'Alt' }[modifier] : undefined;
+      if (key) await page.keyboard.down(key);
       await page.mouse.move(from.x, from.y);
       await page.mouse.down();
       for (let i = 1; i <= 10; i++) {
@@ -139,6 +144,7 @@ function createCommands(page, url, errors) {
         );
       }
       await page.mouse.up();
+      if (key) await page.keyboard.up(key);
     },
     /**
      * drag <role> <name...> <dx> <dy>: pointer drag starting at the element's center.
@@ -387,6 +393,33 @@ async function smoke(c) {
   check(arpLevel > 0.02, `notes play through the arpeggiator (meter ${arpLevel.toFixed(3)})`);
   for (const name of ['Arpeggiator', 'Filter', 'Reverb']) await c.click(['button', 'Remove', name]);
   check((await chain()) === 'synth.chip', 'boxes can be removed');
+  // Other synth engines: the synth's type menu swaps it.
+  await c.select(['Chip', 'type', '|', 'FM']);
+  check((await chain()) === 'synth.fm', `the synth can be swapped for FM (${await chain()})`);
+  await c['click-at'](['.timeline-canvas', '2', '10']); // focus off the menu (keys play again)
+  await c.sleep(['300']);
+  await c.keydown(['KeyA']);
+  const fmLevel = await c['meter-max'](['400']);
+  await c.keyup(['KeyA']);
+  check(fmLevel > 0.02, `the FM synth plays (meter ${fmLevel.toFixed(3)})`);
+  await c.select(['FM', 'type', '|', 'Wave']);
+  check((await chain()) === 'synth.wave', `the synth can be swapped for Wave (${await chain()})`);
+  await c['click-at'](['.timeline-canvas', '2', '10']);
+  await c.sleep(['300']);
+  await c.keydown(['KeyA']);
+  const waveLevel = await c['meter-max'](['400']);
+  await c.keyup(['KeyA']);
+  check(waveLevel > 0.02, `the Wave synth plays (meter ${waveLevel.toFixed(3)})`);
+  await c.select(['Wave', 'type', '|', 'SID']);
+  check((await chain()) === 'synth.sid', `the synth can be swapped for SID (${await chain()})`);
+  await c['click-at'](['.timeline-canvas', '2', '10']);
+  await c.sleep(['300']);
+  await c.keydown(['KeyA']);
+  const sidLevel = await c['meter-max'](['400']);
+  await c.keyup(['KeyA']);
+  check(sidLevel > 0.02, `the SID synth plays (meter ${sidLevel.toFixed(3)})`);
+  await c.select(['SID', 'type', '|', 'Chip']);
+  check((await chain()) === 'synth.chip', 'and back to Chip');
   await c.sleep(['600']);
 
   // Recording, clip editing and playback (track 3 is selected at this point). The timeline
@@ -434,7 +467,7 @@ async function smoke(c) {
   );
   check((await undoTitle()).startsWith('Undo Record'), 'the take is one undo step');
 
-  await c['drag-at'](['.timeline-canvas', '20', '164', '132', '220']);
+  await c['drag-at'](['.timeline-canvas', '20', '220', '132', '276']);
   now = await clips();
   check(
     now === `3:3840+${length}/1`,
@@ -482,11 +515,22 @@ async function smoke(c) {
     (await c.text(['.notice'])).includes('Track 3 now plays a copy'),
     'a notice explains the copy',
   );
-  await c['click-at'](['.timeline-canvas', '120', '220']); // first clip on track 4
+  await c['click-at'](['.timeline-canvas', '120', '276']); // first clip on track 4
   check((await editorKind()) === 'Clip preset', 'selecting a clip shows its clip preset');
   check(
     (await editorText('usage')) === 'Used by 2 clips',
     `the clip preset says how many clips use it (${await editorText('usage')})`,
+  );
+  // What an edit would change is highlighted: both clips (they share the preset), no track.
+  const reach = async () =>
+    JSON.parse(
+      await c.eval([
+        "(() => { const r = chipDaw.session.presetReach; const headers = [...document.querySelectorAll('.lane-header.affected .name')].map(e => e.textContent).join(','); return `${r.clipIds.size} clips; ${headers}`; })()",
+      ]),
+    );
+  check(
+    (await reach()) === '2 clips; ',
+    `both clips sharing the preset are highlighted (${await reach()})`,
   );
   await c.click(['button', 'Make', 'unique']);
   await c.click(['radio', 'Noise']);
@@ -506,13 +550,21 @@ async function smoke(c) {
   await c.click(['button', 'Load', 'to', 'track']);
   ps = await presets();
   check(ps.startsWith('Init 2/2/fx.bitcrush | Init 3/4/ | Init 3/4/'), `Load to track (${ps})`);
+  check(
+    (await reach()) === '1 clips; Track 4',
+    `the track whose preset it now is gets highlighted too (${await reach()})`,
+  );
   await c.click(['button', 'Show', 'track', 'preset']);
   check((await editorKind()) === 'Track 4 preset', 'the back button shows the track preset');
+  check(
+    (await reach()) === '0 clips; Track 4',
+    `a track preset edit highlights only its track (${await reach()})`,
+  );
   await c.screenshot(['3-arrangement']);
 
   // Piano roll: double-click an empty lane (track 6, bar 1) to create a clip, then double-click
   // the clip to open it.
-  const lane6 = String(24 + 56 * 5 + 28);
+  const lane6 = String(80 + 56 * 5 + 28);
   await c['dblclick-at'](['.timeline-canvas', '20', lane6]);
   await c['dblclick-at'](['.timeline-canvas', '20', lane6]);
   check(
@@ -582,6 +634,24 @@ async function smoke(c) {
   const rollLevel = await c['meter-max'](['800']);
   await c.press(['Space']);
   check(rollLevel > 0.005, `drawn notes play back (meter ${rollLevel.toFixed(3)})`);
+
+  // Automation: the Lane menu turns the bottom lane into a param's automation (96 px tall);
+  // a click inside the clip adds a point.
+  await c.select(['Lane', '|', 'Level']);
+  await c['click-at'](['.piano-roll-canvas', X(960), String(rollHeight - 40)]);
+  const lanes = JSON.parse(
+    await c.eval([
+      "chipDaw.session.editing.clip.automation.map(l => `${l.paramId}:${l.points.map(p => p.tick).join(',')}`).join(' ')",
+    ]),
+  );
+  check(lanes === 'level:960', `clicking the Level lane adds an automation point (${lanes})`);
+  const marked = JSON.parse(
+    await c.eval(["document.querySelector('[aria-label=Lane]').selectedOptions[0].text"]),
+  );
+  check(marked === '● Level', `the Lane menu marks automated params (${marked})`);
+  check((await undoTitle()).startsWith('Undo Add automation point'), 'adding a point is undoable');
+  await c.press(['Control+z']);
+  await c.select(['Lane', '|', 'Velocity']);
   await c.screenshot(['4-piano-roll']);
 
   // The key left of 1 turns the keyboard piano off; its letter keys become shortcuts. Now:
@@ -604,6 +674,7 @@ async function smoke(c) {
     ['m', 'Metronome'],
     ['o', 'Overdub'],
     ['r', 'Record'],
+    ['l', 'Loop'],
   ]) {
     await c.press([key]);
     const on = await c.attr(['aria-pressed', 'button', name]);
@@ -655,7 +726,7 @@ async function smoke(c) {
     'Enter opens the selected clip in the piano roll',
   );
   await c.click(['tab', 'Preset']);
-  await c['click-at'](['.timeline-canvas', '120', '220']); // the first clip on track 4
+  await c['click-at'](['.timeline-canvas', '120', '276']); // the first clip on track 4
   await c.press(['Backquote']); // clicking moved focus; the piano is still off
   await c.press(['Backquote']);
   const clipPreset = () =>
@@ -684,6 +755,92 @@ async function smoke(c) {
   check((await c.meter()) > 0.02, 'the key left of 1 turns the keyboard piano back on');
   await c.keyup(['KeyA']);
   await c.sleep(['400']);
+
+  // Loop: the button shows markers over bars 1-4 on the ruler; dragging the end marker (bar 5,
+  // x = 448) to bar 3 (x = 224) makes a two-bar loop that playback keeps jumping back into.
+  const loopRegion = () => state('chipDaw.session.project.loop');
+  await c.press(['Home']); // also scrolls the timeline back to the start (the x values below)
+  await c.click(['button', 'Loop']);
+  check(
+    (await c.attr(['aria-pressed', 'button', 'Loop'])) === 'true',
+    'the Loop button toggles on',
+  );
+  check(
+    JSON.stringify(await loopRegion()) === '{"startTick":0,"endTick":15360}',
+    'the loop starts as the first four bars',
+  );
+  await c['drag-at'](['.timeline-canvas', '448', '10', '224', '10']);
+  check(
+    JSON.stringify(await loopRegion()) === '{"startTick":0,"endTick":7680}',
+    `dragging the end marker moves the loop end (${JSON.stringify(await loopRegion())})`,
+  );
+  check((await undoTitle()).startsWith('Undo Move loop'), 'a marker drag is one undo step');
+  await c.press(['Space']);
+  await c.sleep(['4500']); // two bars take 4 s at 120 BPM
+  const looped = await pos();
+  await c.press(['Space']);
+  check(
+    looped > 0 && looped < 7680,
+    `playback jumps back to the loop start (${Math.round(looped)})`,
+  );
+  await c.screenshot(['5-loop']);
+  await c.click(['button', 'Loop']);
+  check(
+    (await c.attr(['aria-pressed', 'button', 'Loop'])) === 'false',
+    'the Loop button toggles off',
+  );
+
+  // Tempo lane and bars. The lane sits between the ruler (y < 24) and the tracks (y >= 80): its
+  // tempo line is y 24..66, the time-signature strip y 66..80. Bar B starts at x = 112·(B−1).
+  const trackTop = () =>
+    state("document.querySelector('.lane-header').getBoundingClientRect().top");
+  const shownTop = await trackTop();
+  await c.click(['button', 'Tempo', 'lane']);
+  const hiddenTop = await trackTop();
+  check(
+    (await c.attr(['aria-pressed', 'button', 'Tempo', 'lane'])) === 'false' &&
+      shownTop - hiddenTop === 56,
+    `the top bar button hides the tempo lane (tracks move up ${shownTop - hiddenTop} px)`,
+  );
+  await c.click(['button', 'Tempo', 'lane']);
+  check((await trackTop()) === shownTop, 'and shows it again');
+  const tempoMap = () =>
+    state(
+      '(() => { const m = chipDaw.session.project.tempoMap; return [m.tempos.map(t => `${t.tick}=${Math.round(t.bpm)}${t.ramp === "linear" ? "~" : ""}`).join(" "), m.meters.map(e => `${e.tick}:${e.numerator}/${e.denominator}`).join(" ")]; })()',
+    );
+  await c.press(['Home']);
+  await c['click-at'](['.timeline-canvas', '224', '30']); // bar 3, near the top: faster
+  let tm = await tempoMap();
+  check(/^0=120 7680=1\d\d$/.test(tm[0]), `clicking the tempo line adds a tempo change (${tm[0]})`);
+  await c['click-at'](['.timeline-canvas', '224', '30', 'shift']);
+  tm = await tempoMap();
+  check(tm[0].endsWith('~'), `Shift-click makes it ramp (${tm[0]})`);
+  await c['dblclick-at'](['.timeline-canvas', '340', '73']); // bar 4 in the strip
+  await c.click(['spinbutton', 'Beats', 'per', 'bar']);
+  await c.press(['Control+a']);
+  await c.type(['3']);
+  await c.select(['Subdivision', '|', '3']);
+  await c.click(['button', 'Set']);
+  tm = await tempoMap();
+  check(tm[1] === '0:4/4 11520:3/4', `the time-signature strip sets 3/4 from bar 4 (${tm[1]})`);
+  const sub = await state('chipDaw.session.project.tempoMap.meters[1].subdivision');
+  check(sub === 3, `the popup sets the subdivision (triplets: ${sub} per beat)`);
+  const clipsBefore = await clips();
+  await c['drag-at'](['.timeline-canvas', '120', '10', '230', '10', 'shift']); // bars 2-3
+  const selected = await state('JSON.stringify(chipDaw.session.barSelection)');
+  check(
+    selected === '{"startTick":3840,"endTick":11520}',
+    `Shift-dragging the ruler selects whole bars (${selected})`,
+  );
+  await c.click(['button', 'Delete', 'bars']);
+  tm = await tempoMap();
+  check(tm[1] === '0:4/4 3840:3/4', `deleting 2 bars moves the 3/4 back with the music (${tm[1]})`);
+  check((await undoTitle()).startsWith('Undo Delete bars'), 'deleting bars is one undo step');
+  await c.press(['Control+z']);
+  check((await clips()) === clipsBefore, 'undo brings the bars and clips back');
+  for (let i = 0; i < 3; i++) await c.press(['Control+z']); // the meter, the ramp, the tempo
+  tm = await tempoMap();
+  check(tm.join(' | ') === '0=120 | 0:4/4', `and the tempo map back (${tm.join(' | ')})`);
 
   // Files: export, start a new project, import it back; autosave survives a reload.
   await c['export-file'](['tmp/run-chip-daw/smoke.chip']);
@@ -723,7 +880,8 @@ async function smoke(c) {
       ]),
     );
   check(
-    (await libraryNames()) === 'Pulse bass, Triangle bass, Triangle bass',
+    (await libraryNames()) ===
+      'FM bass, FM slap bass, Pulse bass, SID bass, SID pulse bass, Triangle bass, Triangle bass, Wave bass, Wave sine bass',
     `the track's preset saves into the library (${await libraryNames()})`,
   );
   await c.click(['button', 'Rename', 'preset']);
@@ -771,7 +929,7 @@ async function smoke(c) {
   check((await c['meter-max'](['300'])) === 0, "selecting 'MIDI off' ignores the keyboard");
 
   await c.theme(['light']);
-  await c.screenshot(['5-light']);
+  await c.screenshot(['6-light']);
 
   const errors = await c.errors();
   check(errors === 'none', `no console errors (${errors})`);

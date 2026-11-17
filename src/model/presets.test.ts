@@ -9,7 +9,7 @@ import {
 } from './clip-preset-commands';
 import { createClip } from './clips';
 import { deleteClips, placeClips, recordTake, setBoxParam, type RecordedTake } from './commands';
-import { PPQ } from './constants';
+import { PPQ, PROJECT_FORMAT_VERSION } from './constants';
 import { createPreset, createProject } from './defaults';
 import { History } from './history';
 import { copyPreset } from './library';
@@ -297,7 +297,7 @@ describe('format 1 → 2 migration', () => {
 
   it('moves segment presets into the project list and points tracks and clips at them', () => {
     const migrated = validateProject(migrateProject(v1Project()));
-    expect(migrated.formatVersion).toBe(2);
+    expect(migrated.formatVersion).toBe(PROJECT_FORMAT_VERSION);
     expect(migrated.presets.map((p) => p.name)).toEqual(['P0', 'P1']);
     // Both presets had the same id in the file: the second got a fresh one.
     expect(new Set(migrated.presets.map((p) => p.id)).size).toBe(2);

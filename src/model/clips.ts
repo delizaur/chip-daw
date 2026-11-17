@@ -58,6 +58,23 @@ export function clearRange(
   track.clips = result;
 }
 
+/**
+ * Splits every clip that spans `tick` into two at that point (the right part gets a new id), so
+ * material can be moved apart there (inserting bars).
+ */
+export function splitClipsAt(track: Track, tick: Tick): void {
+  const result: Clip[] = [];
+  for (const clip of track.clips) {
+    if (clip.startTick < tick && clipEnd(clip) > tick) {
+      result.push(cropped(clip, clip.startTick, tick, clip.id));
+      result.push(cropped(clip, tick, clipEnd(clip), createId()));
+    } else {
+      result.push(clip);
+    }
+  }
+  track.clips = result;
+}
+
 /** Adds a clip to a track, clearing whatever it overlaps. Keeps clips sorted by start. */
 export function placeClip(track: Track, clip: Clip): void {
   clearRange(track, clip.startTick, clipEnd(clip), new Set([clip.id]));

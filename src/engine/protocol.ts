@@ -1,6 +1,6 @@
 import type { Patch } from 'immer';
 import type { RecordedNote, RecordedTake } from '../model/commands';
-import type { Project, Tick } from '../model/types';
+import type { AutomationTarget, Project, Tick } from '../model/types';
 
 /** Messages from the main thread to the engine. */
 export type UiToEngine =
@@ -20,6 +20,18 @@ export type UiToEngine =
       presetId?: string;
     }
   | { type: 'noteOff'; trackId: string; pitch: number }
+  /**
+   * A knob moved while recording (or counting in to record): heard right away on everything the
+   * track plays, and recorded as automation (stamped like notes; during the count-in, as the
+   * starting value). The sound goes back to the preset when recording stops.
+   */
+  | {
+      type: 'paramMove';
+      trackId: string;
+      target: AutomationTarget;
+      paramId: string;
+      value: number;
+    }
   /** Releases every note on every track (e.g. when the window loses focus). */
   | { type: 'allNotesOff' }
   // Transport
@@ -32,6 +44,8 @@ export type UiToEngine =
   /** Overdub mode: while recording, live notes play through the clip under the playhead. */
   | { type: 'setOverdub'; enabled: boolean }
   | { type: 'setMetronome'; enabled: boolean }
+  /** Loop on/off: while on, playback reaching the loop end jumps back to the loop start. */
+  | { type: 'setLoop'; enabled: boolean }
   /** Output latency in seconds, so recorded notes line up with what the player heard. */
   | { type: 'setLatency'; seconds: number };
 
@@ -74,4 +88,5 @@ export const QUEUED_MESSAGE_TYPES: ReadonlySet<UiToEngine['type']> = new Set([
   'setRecord',
   'setOverdub',
   'setMetronome',
+  'setLoop',
 ]);

@@ -1,6 +1,8 @@
 import { FILTER, FilterType } from '../../model/boxes/effects';
-import { paramValue } from '../../model/boxes/registry';
+import { paramReader } from '../../model/boxes/registry';
 import type { BlockContext, EffectRuntime } from '../boxes/types';
+
+const read = paramReader(FILTER);
 
 /** Per-block smoothing of the cutoff, so knob moves don't click. */
 const CUTOFF_SMOOTHING = 0.25;
@@ -26,14 +28,9 @@ export class Filter implements EffectRuntime {
   }
 
   setParams(params: Readonly<Record<string, number>>): void {
-    const value = (id: string) =>
-      paramValue(
-        { id: '', type: FILTER.type, params },
-        FILTER.params.find((p) => p.id === id)!,
-      );
-    this.#type = Math.round(value('type'));
-    this.#targetCutoff = value('cutoff');
-    this.#k = 2 - 1.96 * value('resonance');
+    this.#type = Math.round(read(params, 'type'));
+    this.#targetCutoff = read(params, 'cutoff');
+    this.#k = 2 - 1.96 * read(params, 'resonance');
   }
 
   process(left: Float32Array, right: Float32Array, frames: number, _context: BlockContext): void {

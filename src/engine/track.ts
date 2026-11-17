@@ -1,6 +1,8 @@
-import type { BoxInstance, Clip, Preset, Tick, Track } from '../model/types';
+import { resolveTarget } from '../model/automation';
+import type { AutomationTarget, BoxInstance, Clip, Preset, Tick, Track } from '../model/types';
 import { createEffect, createSequencer, createSynth } from './boxes/registry';
 import type { BlockContext, EffectRuntime, SequencerRuntime, SynthRuntime } from './boxes/types';
+import { buildCurves, type AutomationCurve } from './automation';
 import { SmoothedValue, volumeToGain } from './dsp';
 import { BlockEvents, firstNoteFrom, scheduleNotes, type ScheduledNote } from './note-schedule';
 
@@ -24,6 +26,11 @@ function offsetOf(tick: Tick, window: PlayWindow, frames: number): number {
     frames - 1,
     Math.max(0, Math.floor((tick - window.start) / window.ticksPerSample)),
   );
+}
+
+/** Anything with params: sequencer, synth and effect runtimes. */
+interface Paramed {
+  setParams(params: Readonly<Record<string, number>>): void;
 }
 
 /** A sequencer or effect box and its runtime (null for unknown types, which are skipped). */
@@ -58,6 +65,10 @@ function syncSlots<R extends { setParams(params: Record<string, number>): void }
  * (e.g. a reverb tail). Runtimes are matched to boxes by id, so a copy of a preset that keeps
  * box ids (copy on write) keeps them. A chain that has no held notes and has been silent for a
  * while sleeps (skips processing) until its next note.
+ *
+ * Params can be overridden without changing the preset: by clip automation (`automate`, every
+ * block) and by knob moves while recording (`setOverride`). An override holds until it's
+ * replaced or cleared; the preset's own value applies again after `clearOverride`.
  * `sync` and the note methods (between blocks) may allocate; `process` must not.
  */
 export class PresetChain {
@@ -77,6 +88,28 @@ export class PresetChain {
   readonly input = new BlockEvents();
   #left = new Float32Array(128);
   #right = new Float32Array(128);
+
+  /**
+   * Per box: its runtime and the params it was given (the box's own, with overrides on top).
+   * Rebuilt on sync; the params objects are mutated in place by overrides.
+   */
+  #targets = new Map<
+    string,
+    { box: BoxInstance; runtime: Paramed; params: Record<string, number> }
+  >();
+  /** Overridden params: box id → param id → value. */
+  readonly #overrides = new Map<string, Map<string, number>>();
+  /** Automation curves for this chain's preset, and the value each last applied (NaN: none). */
+  #curves: AutomationCurve[] = [];
+  #applied = new Float64Array(0);
+  /**
+   * Params whose automation is paused ("boxId\u0000paramId"): a knob moved while recording owns
+   * them until it stops. `#paused` flags the matching curves (read every block).
+   */
+  readonly #pausedParams = new Set<string>();
+  #paused = new Uint8Array(0);
+  /** The preset the curves were built for (the track rebuilds them when it changes). */
+  curvesFor: Preset | null = null;
 
   /** Notes on minus notes off, so a chain holding a note never sleeps. */
   #held = 0;
@@ -124,7 +157,113 @@ export class PresetChain {
       for (const slot of this.#sequencers) slot.runtime?.reset();
       this.#synth?.allNotesOff();
     }
+    this.#rebuildTargets();
     this.#wake();
+  }
+
+  /** Maps box ids to runtimes, re-applying overrides on top of the (possibly new) params. */
+  #rebuildTargets(): void {
+    const targets = new Map<
+      string,
+      { box: BoxInstance; runtime: Paramed; params: Record<string, number> }
+    >();
+    const add = (box: BoxInstance, runtime: Paramed | null) => {
+      if (!runtime) return;
+      const params = { ...box.params };
+      const overrides = this.#overrides.get(box.id);
+      if (overrides) {
+        for (const [paramId, value] of overrides) params[paramId] = value;
+        runtime.setParams(params);
+      }
+      targets.set(box.id, { box, runtime, params });
+    };
+    for (const slot of this.#sequencers) add(slot.box, slot.runtime);
+    if (this.#synthBox) add(this.#synthBox, this.#synth);
+    for (const slot of this.#effects) add(slot.box, slot.runtime);
+    this.#targets = targets;
+  }
+
+  /** Overrides a param (automation, a knob moved while recording). No allocation once set. */
+  setOverride(boxId: string, paramId: string, value: number): void {
+    let overrides = this.#overrides.get(boxId);
+    if (!overrides) {
+      overrides = new Map();
+      this.#overrides.set(boxId, overrides);
+    }
+    overrides.set(paramId, value);
+    const target = this.#targets.get(boxId);
+    if (!target) return;
+    target.params[paramId] = value;
+    target.runtime.setParams(target.params);
+  }
+
+  /** Back to the preset's own value for a param. */
+  clearOverride(boxId: string, paramId: string): void {
+    const overrides = this.#overrides.get(boxId);
+    if (!overrides?.delete(paramId)) return;
+    const target = this.#targets.get(boxId);
+    if (!target) return;
+    const own = target.box.params[paramId];
+    if (own === undefined) delete target.params[paramId];
+    else target.params[paramId] = own;
+    target.runtime.setParams(target.params);
+  }
+
+  /** Clears every override (e.g. knob moves made while recording, once it stops). */
+  clearOverrides(): void {
+    for (const [boxId, overrides] of this.#overrides) {
+      for (const paramId of [...overrides.keys()]) this.clearOverride(boxId, paramId);
+    }
+    this.#applied.fill(NaN);
+  }
+
+  /** Sets the automation curves (from the clips playing with this preset). */
+  setAutomation(curves: AutomationCurve[]): void {
+    // Params that are no longer automated go back to their preset value.
+    for (const old of this.#curves) {
+      if (!curves.some((c) => c.boxId === old.boxId && c.paramId === old.paramId)) {
+        this.clearOverride(old.boxId, old.paramId);
+      }
+    }
+    this.#curves = curves;
+    this.#applied = new Float64Array(curves.length).fill(NaN);
+    this.#paused = Uint8Array.from(curves, (c) =>
+      this.#pausedParams.has(`${c.boxId}\u0000${c.paramId}`) ? 1 : 0,
+    );
+  }
+
+  /** Pauses a param's automation (a knob moved while recording owns it). */
+  pauseAutomation(boxId: string, paramId: string): void {
+    this.#pausedParams.add(`${boxId}\u0000${paramId}`);
+    this.#curves.forEach((c, i) => {
+      if (c.boxId === boxId && c.paramId === paramId) this.#paused[i] = 1;
+    });
+  }
+
+  /** Every param follows its automation again. */
+  resumeAutomation(): void {
+    this.#pausedParams.clear();
+    this.#paused.fill(0);
+  }
+
+  /** Applies the automation at `tick` (hold and chase: the value there, wherever you came from). */
+  automate(tick: Tick): void {
+    const curves = this.#curves;
+    for (let i = 0; i < curves.length; i++) {
+      if (this.#paused[i] === 1) continue;
+      const curve = curves[i]!;
+      const value = curve.valueAt(tick);
+      const applied = this.#applied[i]!;
+      if (Number.isNaN(value)) {
+        if (!Number.isNaN(applied)) {
+          this.clearOverride(curve.boxId, curve.paramId);
+          this.#applied[i] = NaN;
+        }
+      } else if (value !== applied) {
+        this.setOverride(curve.boxId, curve.paramId, value);
+        this.#applied[i] = value;
+      }
+    }
   }
 
   #syncSynth(box: BoxInstance | null): void {
@@ -317,11 +456,23 @@ export class TrackRuntime {
     }
     if (chainsChanged) this.#chains = [this.live, ...this.#clipChains.values()];
 
-    if (track.clips !== this.#clips) {
+    const clipsChanged = track.clips !== this.#clips;
+    if (clipsChanged) {
       this.#clips = track.clips;
       this.#notes = scheduleNotes(track.clips);
       this.#noteChains = this.#notes.map((n) => this.#clipChains.get(n.presetId)!);
       this.#cursor = firstNoteFrom(this.#notes, position);
+    }
+
+    // Automation: rebuilt when the clips or a chain's preset change (lanes link to its boxes),
+    // then chased to the current position.
+    for (const [presetId, chain] of this.#clipChains) {
+      if (!clipsChanged && chain.curvesFor === chain.preset) continue;
+      const preset = chain.preset;
+      const clips = track.clips.filter((c) => c.presetId === presetId);
+      chain.setAutomation(preset ? buildCurves(clips, preset) : []);
+      chain.curvesFor = preset;
+      chain.automate(position);
     }
   }
 
@@ -336,16 +487,47 @@ export class TrackRuntime {
     }
   }
 
+  /** Whether knob moves (while recording) currently override params on this track. */
+  #moved = false;
+
+  /**
+   * A knob moved while recording: heard at once on everything this track plays (the live
+   * chain and every clip chain whose preset has that box), and that param's automation pauses,
+   * so the knob owns it until `releaseMoves`.
+   */
+  moveParam(target: AutomationTarget, paramId: string, value: number): void {
+    for (const chain of this.#chains) {
+      const box = chain.preset && resolveTarget(chain.preset, target);
+      if (!box) continue;
+      chain.pauseAutomation(box.id, paramId);
+      chain.setOverride(box.id, paramId, value);
+    }
+    this.#moved = true;
+  }
+
+  /** Recording stopped: the knob moves stop overriding; automation is chased again at `tick`. */
+  releaseMoves(tick: Tick): void {
+    if (!this.#moved) return;
+    this.#moved = false;
+    this.live.clearOverrides();
+    for (const chain of this.#clipChains.values()) {
+      chain.resumeAutomation();
+      chain.clearOverrides();
+      chain.automate(tick);
+    }
+  }
+
   /** The preset of the clip at `tick` on this track, if there is one. */
   clipPresetAt(tick: Tick): string | undefined {
     return this.#clips?.find((c) => c.startTick <= tick && tick < c.startTick + c.lengthTicks)
       ?.presetId;
   }
 
-  /** Jumps clip playback to `tick`, releasing notes started by playback. */
+  /** Jumps clip playback to `tick`, releasing notes started by playback; chases automation. */
   locate(tick: Tick): void {
     this.stopPlayback();
     this.#cursor = firstNoteFrom(this.#notes, tick);
+    for (const chain of this.#clipChains.values()) chain.automate(tick);
   }
 
   /** Releases notes started by playback (live notes keep playing). */
@@ -386,12 +568,15 @@ export class TrackRuntime {
   }
 
   /**
-   * Renders the track and adds it, with its gain, to the mix buffers. `window` is null when
-   * the transport is stopped (only live notes play).
+   * Renders `frames` samples of the track and adds them, with its gain, to the mix buffers from
+   * sample `offset` on (a block can be split, e.g. where the loop jumps back). `window` is the
+   * part of the song those samples cover, or null when the transport is stopped (only live
+   * notes play).
    */
   process(
     mixLeft: Float32Array,
     mixRight: Float32Array,
+    offset: number,
     frames: number,
     window: PlayWindow | null,
     context: BlockContext,
@@ -407,14 +592,18 @@ export class TrackRuntime {
 
     const chains = this.#chains;
     for (let c = 0; c < chains.length; c++) chains[c]!.input.clear();
-    if (window) this.#collectEvents(window, frames);
+    if (window) {
+      // chains[0] is the live chain (no automation); the rest play clips.
+      for (let c = 1; c < chains.length; c++) chains[c]!.automate(window.start);
+      this.#collectEvents(window, frames);
+    }
     for (let c = 0; c < chains.length; c++) chains[c]!.process(left, right, frames, context);
 
     const gain = this.#gain;
     for (let i = 0; i < frames; i++) {
       const g = gain.next();
-      mixLeft[i]! += left[i]! * g;
-      mixRight[i]! += right[i]! * g;
+      mixLeft[offset + i]! += left[i]! * g;
+      mixRight[offset + i]! += right[i]! * g;
     }
   }
 

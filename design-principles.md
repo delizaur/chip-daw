@@ -51,6 +51,7 @@ Sequencers, synths and effects are represented as "boxes", that can be freely sw
 
   * Play/pause button.
   * Record (with overdub mode).
+  * Loop: a toggle that turns yellow when on; the loop's start and end markers sit on the ruler (the bar numbers) and extend as lines down through all tracks. It starts as the first four bars; drag the markers to change it.
   * Tempo value in BPM, meter and subdivision. Songs can have BPM, meter and subdivision changes. Tempo can be automated.
   * Global app volume.
   * MIDI input selector.
@@ -71,7 +72,7 @@ Sequencers, synths and effects are represented as "boxes", that can be freely sw
   * Every track also has a mute and solo button, and a volume control.
 * #### Preset editing (bottom of the screen)
 
-  * When editing a preset (from the left preset list, a track or a clip), the bottom of the screen acts as the preset editing area. Its header always says which preset it is editing (track or clip preset) and how many clips use it. Like in ableton Live, the preset "boxes" are shown from left to right, with every parameter visible and editable.
+  * When editing a preset (from the left preset list, a track or a clip), the bottom of the screen acts as the preset editing area. Its header always says which preset it is editing (track or clip preset) and how many clips use it, and the arrangement highlights the clips and tracks an edit would change. Like in ableton Live, the preset "boxes" are shown from left to right, with every parameter visible and editable.
   * Sequencers, synths and effects can be added or replaced from a list.
   * Modifying a parameter while recording automates it.
 

@@ -74,10 +74,25 @@ export function validateProject(value: unknown): Project {
     }
   });
   meters.forEach((m, i) => {
-    if (!isObject(m) || !isNumber(m.tick) || !isNumber(m.numerator) || !isNumber(m.denominator)) {
+    if (
+      !isObject(m) ||
+      !isNumber(m.tick) ||
+      !isNumber(m.numerator) ||
+      !isNumber(m.denominator) ||
+      !isNumber(m.subdivision) ||
+      m.subdivision < 1
+    ) {
       fail(`tempoMap.meters[${i}]`, 'a time signature');
     }
   });
+
+  if (!isObject(value.loop)) fail('loop', 'a loop region');
+  requireNumber(value.loop.startTick, 'loop.startTick');
+  requireNumber(value.loop.endTick, 'loop.endTick');
+  const loop = value.loop as { startTick: number; endTick: number };
+  if (loop.startTick < 0 || loop.endTick <= loop.startTick) {
+    fail('loop', 'a region with its end after its start');
+  }
 
   const presetIds = new Set<string>();
   requireArray(value.presets, 'presets').forEach((preset, p) => {

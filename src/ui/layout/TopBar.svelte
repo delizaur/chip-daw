@@ -104,7 +104,7 @@
     aria-pressed={session.keyboardPiano}
     title={session.keyboardPiano
       ? 'Computer keyboard plays notes: A–; on the selected track, Z/X octave, C/V velocity. Click or press the key left of 1 to use letter keys as shortcuts.'
-      : 'Letter keys are shortcuts: R record, O overdub, M metronome, arrows select clips, A/D clip edges, Enter piano roll, U make unique, P use track preset, T load to track. Click or press the key left of 1 to play notes again.'}
+      : 'Letter keys are shortcuts: R record, O overdub, M metronome, L loop, arrows select clips, A/D clip edges, Enter piano roll, U make unique, P use track preset, T load to track. Click or press the key left of 1 to play notes again.'}
     onclick={() => session.toggleKeyboardPiano()}
   >
     <span aria-hidden="true">⌨</span>
@@ -191,6 +191,8 @@
     box-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
     font-size: var(--text-s);
     color: var(--ink);
+    /* It floats over the timeline ruler: let clicks and drags through to it. */
+    pointer-events: none;
   }
 
   .notice.error {

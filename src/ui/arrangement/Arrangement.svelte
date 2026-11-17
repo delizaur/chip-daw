@@ -2,7 +2,13 @@
   Center area: track headers (DOM) and the timeline (canvas) with ruler, clips and playhead.
 
   Timeline mouse/touch:
-    ruler           click or drag to move the playhead
+    ruler           click or drag to move the playhead; Shift-drag to select whole bars (for
+                    Insert/Delete bars); with the loop on, drag its start and end markers
+                    (snapped to the grid; Alt: free)
+    tempo lane      tempo line: click to add a tempo change, drag a point to move it,
+                    double-click to delete it, Shift-click to make it ramp to the next one
+                    (or jump again); time-signature strip: double-click a bar to change its
+                    time signature
     clip            click to select (Shift: add/remove), drag to move (also to other tracks),
                     drag an edge to resize, double-click to open it in the piano roll;
                     Alt while dragging disables snapping
@@ -12,10 +18,13 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { moveClips, resizeClip } from '../../model/commands';
-  import { PPQ } from '../../model/constants';
-  import { floorTo, snapTick, ticksPerBar } from '../../model/time';
-  import type { Clip, Tick } from '../../model/types';
+  import { getParamDescriptor } from '../../model/boxes/registry';
+  import { moveClips, resizeClip, setLoopRegion } from '../../model/commands';
+  import { toNormalized } from '../../model/scale';
+  import { PPQ, SUBDIVISIONS } from '../../model/constants';
+  import { deleteMeter, setMeter, setTempoEvents } from '../../model/tempo-commands';
+  import { barAt, meterAt, snapInMeter } from '../../model/time';
+  import type { Clip, TempoEvent, Tick } from '../../model/types';
   import { session } from '../state/session.svelte';
   import { trackColor } from '../theme';
   import { drawTimeline, type ClipGhost, type TakePreview } from './draw';
@@ -25,10 +34,18 @@
     hitTest,
     LANE_HEIGHT,
     laneAt,
+    loopMarkerAt,
     RULER_HEIGHT,
+    TEMPO_LANE_HEIGHT,
+    TEMPO_LINE_HEIGHT,
+    bpmAtY,
+    tempoPointAt,
+    tempoRange,
     tickToX,
+    tracksTop,
     xToTick,
     zoomAround,
+    type TempoRange,
     type TimelineView,
   } from './geometry';
 
@@ -44,11 +61,47 @@
 
   const tracks = $derived(session.project.tracks);
   const presetNames = $derived(new Map(session.project.presets.map((p) => [p.id, p.name])));
-  const meter = $derived(session.project.tempoMap.meters[0]!);
-  const height = $derived(RULER_HEIGHT + tracks.length * LANE_HEIGHT);
+  /** Tracks and clips an edit in the preset editor would change, highlighted. */
+  const reach = $derived(session.presetReach);
+  const noClips: ReadonlySet<string> = new Set();
+  /** The loop region while looping is on (null hides the markers). */
+  const loop = $derived(session.loopEnabled ? session.project.loop : null);
+  const tempoMap = $derived(session.project.tempoMap);
+  /** Held still while a tempo point is dragged, so the line doesn't rescale under the pointer. */
+  let frozenRange = $state.raw<TempoRange | null>(null);
+  const range = $derived(frozenRange ?? tempoRange(tempoMap.tempos));
+  const showTempo = $derived(session.tempoLaneVisible);
+  /** Where the track lanes start (lower with the tempo lane shown). */
+  const top = $derived(tracksTop(showTempo));
+  const height = $derived(top + tracks.length * LANE_HEIGHT);
+  /** The time-signature editor, open on a bar (double-click in the strip). */
+  let meterEdit = $state<{
+    tick: Tick;
+    bar: number;
+    numerator: number;
+    denominator: number;
+    subdivision: number;
+    existing: boolean;
+    x: number;
+  } | null>(null);
+  /** A tempo point added by the current gesture: a double-click right after shouldn't delete it. */
+  let tempoAdded = false;
 
   type Drag =
     | { kind: 'seek' }
+    | { kind: 'barSelect'; anchor: Tick }
+    | {
+        kind: 'tempoPoint';
+        /** The other points (the dragged one is re-added where it's dropped). */
+        others: TempoEvent[];
+        ramp: TempoEvent['ramp'];
+        /** The first point stays at the song start (only its tempo moves). */
+        first: boolean;
+        startX: number;
+        startY: number;
+        began: boolean;
+      }
+    | { kind: 'loop'; edge: 'start' | 'end' }
     | {
         kind: 'move';
         ids: ReadonlySet<string>;
@@ -75,8 +128,10 @@
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
+  /** Snaps to the grid for the zoom, counted in the meter at `tick` (Alt: no snapping). */
   function snap(tick: Tick, event: MouseEvent): Tick {
-    return event.altKey ? Math.round(tick) : snapTick(tick, gridTicks(view, meter));
+    if (event.altKey) return Math.max(0, Math.round(tick));
+    return snapInMeter(tempoMap, tick, gridTicks(view, meterAt(tempoMap, tick)));
   }
 
   // --- Drawing ------------------------------------------------------------------------------
@@ -93,7 +148,21 @@
     const trackIndices = [
       ...new Set([session.selectedTrackIndex, ...notes.map((n) => n.trackIndex)]),
     ];
-    return { startTick: take.startTick, trackIndices, notes };
+    // Knob moves, one line per param, as heights within the param's range.
+    const lines: Record<string, { trackIndex: number; points: { tick: Tick; level: number }[] }> =
+      {};
+    for (const move of session.liveMoves) {
+      const trackIndex = indexOf.get(move.trackId);
+      const param = getParamDescriptor(move.target.boxType, move.paramId);
+      if (trackIndex === undefined || !param) continue;
+      const key = `${move.trackId}:${move.target.boxId}:${move.paramId}`;
+      lines[key] ??= { trackIndex, points: [] };
+      lines[key].points.push({
+        tick: Math.max(take.startTick, move.tick),
+        level: toNormalized(move.value, param.min, param.max, param.scale),
+      });
+    }
+    return { startTick: take.startTick, trackIndices, notes, moves: Object.values(lines) };
   }
 
   function draw() {
@@ -110,15 +179,21 @@
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     drawTimeline(ctx, canvas, {
       tracks,
-      meter,
+      tempoMap,
+      tempoRange: range,
+      barSelection: session.barSelection,
+      tracksTop: top,
+      tempoLane: showTempo,
       view,
       width,
       height,
       selectedTrack: session.selectedTrackIndex,
       selectedClips: session.selectedClipIds,
+      affectedClips: reach?.clipIds ?? noClips,
       playhead: session.playheadAt(),
       take: takePreview(),
       ghosts,
+      loop,
       presetNames,
       font: getComputedStyle(canvas).getPropertyValue('--font-ui') || 'sans-serif',
     });
@@ -139,17 +214,23 @@
   $effect(() => {
     void [
       tracks,
-      meter,
+      tempoMap,
+      range,
+      session.barSelection,
+      top,
       view,
       width,
       height,
       ghosts,
       themeVersion,
       presetNames,
+      loop,
+      reach,
       session.selectedTrackIndex,
       session.selectedClipIds,
       session.position,
       session.liveTake,
+      session.liveMoves,
     ];
     draw();
   });
@@ -223,16 +304,71 @@
 
   // --- Pointer --------------------------------------------------------------------------------
 
+  /** On the tempo line: Shift-click a point to toggle its ramp, drag it, or add a new one. */
+  function startTempoGesture(x: number, y: number, event: PointerEvent) {
+    const tempos = tempoMap.tempos;
+    tempoAdded = false;
+    const index = tempoPointAt(tempos, view, range, x, y);
+    if (index >= 0) {
+      const point = tempos[index]!;
+      if (event.shiftKey) {
+        const ramp: TempoEvent['ramp'] = point.ramp === 'linear' ? 'step' : 'linear';
+        const changed = tempos.map((t, i) => (i === index ? { ...t, ramp } : t));
+        session.run(setTempoEvents(changed, ramp === 'linear' ? 'Ramp tempo' : 'Jump tempo'));
+        return;
+      }
+      frozenRange = range;
+      drag = {
+        kind: 'tempoPoint',
+        others: tempos.filter((_, i) => i !== index),
+        ramp: point.ramp,
+        first: index === 0,
+        startX: x,
+        startY: y,
+        began: false,
+      };
+      return;
+    }
+    const tick = snap(xToTick(view, x), event);
+    if (tick <= 0) return;
+    frozenRange = range;
+    session.begin('Add tempo change');
+    session.run(setTempoEvents([...tempos, { tick, bpm: bpmAtY(y, range), ramp: 'step' }]));
+    tempoAdded = true;
+    drag = {
+      kind: 'tempoPoint',
+      others: [...tempos],
+      ramp: 'step',
+      first: false,
+      startX: x,
+      startY: y,
+      began: true,
+    };
+  }
+
   function onpointerdown(event: PointerEvent) {
     if (event.button !== 0 || !canvas) return;
     session.focusArea = 'arrangement';
     const { x, y } = point(event);
-    const hit = hitTest(tracks, view, x, y);
+    const hit = hitTest(tracks, view, x, y, top);
     canvas.setPointerCapture(event.pointerId);
+    const marker = loop ? loopMarkerAt(view, loop, x, y) : null;
 
-    if (hit.kind === 'ruler') {
-      session.seek(snap(hit.tick, event));
-      drag = { kind: 'seek' };
+    if (marker) {
+      session.begin('Move loop');
+      drag = { kind: 'loop', edge: marker };
+    } else if (hit.kind === 'ruler') {
+      if (event.shiftKey) {
+        const bar = barAt(tempoMap, hit.tick);
+        session.barSelection = { startTick: bar.start, endTick: bar.start + bar.length };
+        drag = { kind: 'barSelect', anchor: bar.start };
+      } else {
+        session.barSelection = null;
+        session.seek(snap(hit.tick, event));
+        drag = { kind: 'seek' };
+      }
+    } else if (hit.kind === 'tempo') {
+      if (hit.part === 'line') startTempoGesture(x, y, event);
     } else if (hit.kind === 'clip') {
       session.selectTrack(hit.trackIndex);
       const id = hit.clip.id;
@@ -276,27 +412,65 @@
     if (!canvas) return;
     const { x, y } = point(event);
     if (!drag) {
-      const hit = hitTest(tracks, view, x, y);
+      const hit = hitTest(tracks, view, x, y, top);
+      const onTempoPoint =
+        hit.kind === 'tempo' &&
+        hit.part === 'line' &&
+        tempoPointAt(tempoMap.tempos, view, range, x, y) >= 0;
       canvas.style.cursor =
-        hit.kind === 'clip'
-          ? hit.edge
-            ? 'ew-resize'
-            : 'grab'
-          : hit.kind === 'ruler'
-            ? 'pointer'
-            : '';
+        loop && loopMarkerAt(view, loop, x, y)
+          ? 'ew-resize'
+          : onTempoPoint
+            ? 'grab'
+            : hit.kind === 'tempo'
+              ? hit.part === 'line'
+                ? 'crosshair'
+                : 'pointer'
+              : hit.kind === 'clip'
+                ? hit.edge
+                  ? 'ew-resize'
+                  : 'grab'
+                : hit.kind === 'ruler'
+                  ? 'pointer'
+                  : '';
       return;
     }
 
     if (drag.kind === 'seek') {
       session.seek(snap(xToTick(view, x), event));
+    } else if (drag.kind === 'barSelect') {
+      const anchor = barAt(tempoMap, drag.anchor);
+      const bar = barAt(tempoMap, Math.max(0, xToTick(view, x)));
+      session.barSelection = {
+        startTick: Math.min(anchor.start, bar.start),
+        endTick: Math.max(anchor.start + anchor.length, bar.start + bar.length),
+      };
+    } else if (drag.kind === 'tempoPoint') {
+      if (!drag.began) {
+        if (Math.hypot(x - drag.startX, y - drag.startY) < 3) return;
+        session.begin('Move tempo change');
+        drag.began = true;
+      }
+      canvas.style.cursor = 'grabbing';
+      let tick = drag.first ? 0 : snap(xToTick(view, x), event);
+      if (!drag.first && tick <= 0) tick = gridTicks(view, meterAt(tempoMap, 0));
+      const moved: TempoEvent = { tick, bpm: bpmAtY(y, range), ramp: drag.ramp };
+      session.run(setTempoEvents([...drag.others, moved]));
+    } else if (drag.kind === 'loop') {
+      const tick = snap(xToTick(view, x), event);
+      const { startTick, endTick } = session.project.loop;
+      session.run(
+        drag.edge === 'start'
+          ? setLoopRegion(tick, endTick, 'end')
+          : setLoopRegion(startTick, tick, 'start'),
+      );
     } else if (drag.kind === 'move') {
       if (!drag.started && Math.hypot(x - drag.startX, y - drag.startY) < 4) return;
       drag.started = true;
       canvas.style.cursor = 'grabbing';
       const raw = xToTick(view, x) - xToTick(view, drag.startX);
       const wantTicks = snap(drag.anchorTick + raw, event) - drag.anchorTick;
-      const wantTracks = Math.min(tracks.length - 1, Math.max(0, laneAt(y))) - drag.anchorLane;
+      const wantTracks = Math.min(tracks.length - 1, Math.max(0, laneAt(y, top))) - drag.anchorLane;
       const ids = drag.ids;
       const moving = tracks.flatMap((track, trackIndex) =>
         track.clips.filter((c) => ids.has(c.id)).map((clip) => ({ trackIndex, clip })),
@@ -344,7 +518,12 @@
     drag = null;
     ghosts = null;
     if (canvas) canvas.style.cursor = '';
-    if (finished?.kind === 'move' && finished.started) {
+    if (finished?.kind === 'loop') {
+      session.commit();
+    } else if (finished?.kind === 'tempoPoint') {
+      if (finished.began) session.commit();
+      frozenRange = null;
+    } else if (finished?.kind === 'move' && finished.started) {
       if (finished.deltaTicks !== 0 || finished.deltaTracks !== 0) {
         session.run(moveClips(finished.ids, finished.deltaTicks, finished.deltaTracks));
       }
@@ -359,24 +538,84 @@
 
   function ondblclick(event: MouseEvent) {
     const { x, y } = point(event);
-    const hit = hitTest(tracks, view, x, y);
-    if (hit.kind === 'lane') {
-      session.createEmptyClip(hit.trackIndex, floorTo(hit.tick, ticksPerBar(meter)));
+    const hit = hitTest(tracks, view, x, y, top);
+    if (hit.kind === 'tempo' && hit.part === 'line') {
+      // Delete a tempo change (not the first: the song needs a tempo).
+      const index = tempoPointAt(tempoMap.tempos, view, range, x, y);
+      if (index > 0 && !tempoAdded) {
+        const rest = tempoMap.tempos.filter((_, i) => i !== index);
+        session.run(setTempoEvents(rest, 'Delete tempo change'));
+      }
+    } else if (hit.kind === 'tempo') {
+      const bar = barAt(tempoMap, Math.max(0, hit.tick));
+      const existing = tempoMap.meters.find((m) => m.tick === bar.start);
+      meterEdit = {
+        tick: bar.start,
+        bar: bar.index + 1,
+        numerator: bar.meter.numerator,
+        denominator: bar.meter.denominator,
+        subdivision: bar.meter.subdivision,
+        existing: !!existing && bar.start > 0,
+        x: Math.max(0, Math.min(width - 220, tickToX(view, bar.start))),
+      };
+    } else if (hit.kind === 'lane') {
+      session.createEmptyClip(hit.trackIndex, barAt(tempoMap, hit.tick).start);
     } else if (hit.kind === 'clip') {
       session.openPianoRoll(hit.trackIndex, hit.clip.id);
     }
   }
+
+  function closeOnEscape(event: KeyboardEvent) {
+    if (event.key === 'Escape') meterEdit = null;
+  }
+
+  function applyMeter() {
+    if (!meterEdit) return;
+    session.run(
+      setMeter(meterEdit.tick, meterEdit.numerator, meterEdit.denominator, meterEdit.subdivision),
+    );
+    meterEdit = null;
+  }
+
+  function removeMeter() {
+    if (!meterEdit) return;
+    session.run(deleteMeter(meterEdit.tick));
+    meterEdit = null;
+  }
+
+  const bars = $derived(session.barRange);
 </script>
 
 <section
   class="arrangement"
   aria-label="Arrangement"
   style:--ruler-height="{RULER_HEIGHT}px"
+  style:--tempo-height="{TEMPO_LANE_HEIGHT}px"
   style:--lane-height="{LANE_HEIGHT}px"
 >
   <div class="scroller">
     <div class="headers">
       <div class="zoom">
+        <div class="bar-tools">
+          <button
+            type="button"
+            aria-label="Insert bars"
+            title="Insert {bars.count === 1 ? 'a bar' : `${bars.count} bars`} {session.barSelection
+              ? 'where the selection starts'
+              : 'at the playhead'} (Ctrl+I). Shift-drag the ruler to select bars."
+            onclick={() => session.insertBars()}>+ bar</button
+          >
+          <button
+            type="button"
+            aria-label="Delete bars"
+            title="Delete {bars.count === 1
+              ? 'the bar'
+              : `${bars.count} bars`} {session.barSelection
+              ? 'selected'
+              : 'at the playhead'} (Ctrl+Delete). Shift-drag the ruler to select bars."
+            onclick={() => session.deleteBars()}>− bar</button
+          >
+        </div>
         <button
           type="button"
           aria-label="Zoom out"
@@ -390,11 +629,15 @@
           onclick={() => zoom(1.4)}>+</button
         >
       </div>
+      <div class="tempo-corner" hidden={!showTempo}>
+        <span class="tempo-label">Tempo</span>
+      </div>
       {#each tracks as track, i (track.id)}
         <button
           type="button"
           class="lane-header"
           class:selected={session.selectedTrackIndex === i}
+          class:affected={reach?.trackIds.has(track.id) ?? false}
           style:--color={trackColor(i)}
           aria-label="Select {track.name}"
           aria-pressed={session.selectedTrackIndex === i}
@@ -417,6 +660,58 @@
         onpointercancel={onpointerup}
         {ondblclick}
       ></canvas>
+      {#if meterEdit}
+        <form
+          class="meter-edit"
+          style:left="{meterEdit.x}px"
+          style:top="{RULER_HEIGHT + TEMPO_LINE_HEIGHT}px"
+          aria-label="Time signature"
+          onsubmit={(e) => {
+            e.preventDefault();
+            applyMeter();
+          }}
+        >
+          <span class="meter-title">Bar {meterEdit.bar}</span>
+          <input
+            type="number"
+            min="1"
+            max="16"
+            aria-label="Beats per bar"
+            bind:value={meterEdit.numerator}
+            onkeydown={closeOnEscape}
+          />
+          <span>/</span>
+          <select
+            aria-label="Beat value"
+            bind:value={meterEdit.denominator}
+            onkeydown={closeOnEscape}
+          >
+            {#each [2, 4, 8, 16] as d (d)}
+              <option value={d}>{d}</option>
+            {/each}
+          </select>
+          <span
+            class="meter-sub"
+            title="How the grid divides a beat: 4 for sixteenths in x/4, 3 for triplets, 5 for quintuplets…"
+            >÷</span
+          >
+          <select
+            aria-label="Subdivision"
+            bind:value={meterEdit.subdivision}
+            onkeydown={closeOnEscape}
+          >
+            {#each SUBDIVISIONS as parts (parts)}
+              <option value={parts}>{parts}</option>
+            {/each}
+          </select>
+          <span class="meter-sub">per beat</span>
+          <button type="submit" class="primary">Set</button>
+          {#if meterEdit.existing}
+            <button type="button" onclick={removeMeter}>Delete</button>
+          {/if}
+          <button type="button" aria-label="Cancel" onclick={() => (meterEdit = null)}>✕</button>
+        </form>
+      {/if}
       {#if session.countIn > 0}
         <div class="count-in" role="status" aria-label="Count-in">
           {#key session.countIn}<span>{session.countIn}</span>{/key}
@@ -461,7 +756,99 @@
     border-bottom: 1px solid var(--screen-line-strong);
   }
 
-  .zoom button {
+  .tempo-corner {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: var(--tempo-height);
+    padding: 3px var(--space-1) 3px var(--space-2);
+    border-bottom: 1px solid var(--screen-line-strong);
+    background: var(--screen-raised);
+  }
+
+  .tempo-corner[hidden] {
+    display: none;
+  }
+
+  .tempo-label {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--c-orange);
+  }
+
+  .bar-tools {
+    display: flex;
+    gap: 2px;
+    margin-right: auto;
+  }
+
+  .bar-tools button {
+    height: 18px;
+    padding: 0 var(--space-1);
+    border-radius: var(--r-s);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--screen-ink-dim);
+  }
+
+  .bar-tools button:hover {
+    color: var(--screen-ink);
+    background: var(--screen-line);
+  }
+
+  .meter-edit {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--r-m);
+    background: var(--panel-raised);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.35);
+    color: var(--ink);
+    font-size: var(--text-s);
+  }
+
+  .meter-edit input {
+    width: 44px;
+  }
+
+  .meter-edit input,
+  .meter-edit select {
+    height: 24px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-s);
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+  }
+
+  .meter-edit button {
+    height: 24px;
+    padding: 0 var(--space-2);
+    border-radius: var(--r-s);
+    font-weight: 600;
+  }
+
+  .meter-edit .primary {
+    background: var(--accent);
+    color: var(--ink-on-color);
+  }
+
+  .meter-sub {
+    color: var(--ink-dim);
+    margin-left: var(--space-1);
+  }
+
+  .meter-title {
+    font-weight: 700;
+    margin-right: var(--space-1);
+  }
+
+  .zoom > button {
     position: relative;
     width: 20px;
     height: 18px;
@@ -471,13 +858,13 @@
     line-height: 1;
   }
 
-  .zoom button::after {
+  .zoom > button::after {
     content: '';
     position: absolute;
     inset: -4px -1px;
   }
 
-  .zoom button:hover {
+  .zoom > button:hover {
     background: var(--screen-raised);
     color: var(--screen-ink);
   }
@@ -497,6 +884,19 @@
 
   .lane-header.selected {
     background: color-mix(in srgb, var(--color) 22%, var(--screen-raised));
+  }
+
+  /* An edit in the preset editor would change this track's preset: a white-ish tint. */
+  .lane-header.affected {
+    background: color-mix(in srgb, #fff 16%, var(--screen-raised));
+  }
+
+  .lane-header.selected.affected {
+    background: color-mix(
+      in srgb,
+      #fff 16%,
+      color-mix(in srgb, var(--color) 22%, var(--screen-raised))
+    );
   }
 
   .number {

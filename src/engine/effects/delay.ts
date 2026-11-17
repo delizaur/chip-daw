@@ -1,7 +1,9 @@
 import { DELAY, SYNC_DIVISIONS } from '../../model/boxes/effects';
-import { paramValue } from '../../model/boxes/registry';
+import { paramReader } from '../../model/boxes/registry';
 import { ticksPerSecond } from '../../model/time';
 import type { BlockContext, EffectRuntime } from '../boxes/types';
+
+const read = paramReader(DELAY);
 
 /** Longest delay the buffer holds (a half note at 30 BPM). */
 const MAX_SECONDS = 4;
@@ -35,16 +37,12 @@ export class Delay implements EffectRuntime {
   }
 
   setParams(params: Readonly<Record<string, number>>): void {
-    const value = (id: string) =>
-      paramValue(
-        { id: '', type: DELAY.type, params },
-        DELAY.params.find((p) => p.id === id)!,
-      );
-    this.#divisionTicks = SYNC_DIVISIONS[Math.round(value('time'))]?.ticks ?? this.#divisionTicks;
-    this.#pingPong = Math.round(value('mode')) === 1;
-    this.#feedback = value('feedback');
-    this.#toneCoef = 1 - Math.exp((-2 * Math.PI * value('tone')) / this.#sampleRate);
-    this.#wet = value('wet');
+    this.#divisionTicks =
+      SYNC_DIVISIONS[Math.round(read(params, 'time'))]?.ticks ?? this.#divisionTicks;
+    this.#pingPong = Math.round(read(params, 'mode')) === 1;
+    this.#feedback = read(params, 'feedback');
+    this.#toneCoef = 1 - Math.exp((-2 * Math.PI * read(params, 'tone')) / this.#sampleRate);
+    this.#wet = read(params, 'wet');
   }
 
   process(left: Float32Array, right: Float32Array, frames: number, context: BlockContext): void {

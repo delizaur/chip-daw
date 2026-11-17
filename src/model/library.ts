@@ -28,6 +28,12 @@ export interface Library {
   formatVersion: number;
   folders: LibraryFolder[];
   presets: LibraryPreset[];
+  /**
+   * Names of the starter presets this library has been given, so newer starter presets (a new
+   * synth's) can be added once, and ones the user deleted don't come back. Absent in libraries
+   * from before it existed.
+   */
+  starters?: string[];
 }
 
 export function emptyLibrary(): Library {
@@ -175,7 +181,46 @@ export function validateLibrary(value: unknown): Library {
     if (e.folderId !== null && typeof e.folderId !== 'string') fail(`preset ${i} has a bad folder`);
     checkPreset(e.preset, `presets[${i}].preset`);
   });
+  if (
+    library.starters !== undefined &&
+    (!Array.isArray(library.starters) || library.starters.some((n) => typeof n !== 'string'))
+  ) {
+    fail('the starter list is damaged');
+  }
   return value as Library;
+}
+
+/**
+ * Adds the starter presets of `factory` that this library hasn't been given yet, each into the
+ * folder of the same name (created if missing), and records them as given. Returns the same
+ * library when there's nothing new. A library from before `starters` existed counts only the
+ * starter presets it still holds as given.
+ */
+export function addNewStarters(library: Library, factory: Library): Library {
+  const given = new Set(library.starters ?? library.presets.map((p) => p.preset.name));
+  const all = factory.presets.map((p) => p.preset.name);
+  const fresh = factory.presets.filter((p) => !given.has(p.preset.name));
+  if (fresh.length === 0) {
+    return library.starters && all.every((name) => given.has(name))
+      ? library
+      : { ...library, starters: [...new Set([...given, ...all])] };
+  }
+  const folders = [...library.folders];
+  const presets = [...library.presets];
+  for (const entry of fresh) {
+    const folderName = factory.folders.find((f) => f.id === entry.folderId)?.name;
+    let folderId: string | null = null;
+    if (folderName) {
+      let folder = folders.find((f) => f.name === folderName);
+      if (!folder) {
+        folder = { id: createId(), name: folderName };
+        folders.push(folder);
+      }
+      folderId = folder.id;
+    }
+    presets.push({ folderId, preset: entry.preset });
+  }
+  return { ...library, folders, presets, starters: [...new Set([...given, ...all])] };
 }
 
 export const PRESET_EXTENSION = '.chippreset';

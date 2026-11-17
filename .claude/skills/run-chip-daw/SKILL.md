@@ -40,18 +40,19 @@ recording (one undo step); dragging the clip on the canvas
 moves it a bar later and a track down; Ctrl+D duplicates, Delete deletes, Ctrl+Z restores; Space
 plays the clip back; clip presets: editing track 3's preset (which those clips use) switches the
 track to a copy with a notice while the clips keep theirs, selecting a clip shows "Clip preset ·
-Used by 2 clips", and Make unique, Use track preset, Load to track and the back button work;
+Used by 2 clips" and highlights the clips and track headers an edit would change, and Make unique, Use track preset, Load to track and the back button work;
 double-clicks create a clip and open it in the piano roll, where drawing,
 moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
 and the notes play back; the key left of 1 turns the keyboard piano off (letters then play
 nothing), R/O/M toggle record/overdub/metronome, arrows select the closest/next/previous/lower/upper
 clip, A/D walk the playhead along clip edges (selecting the clip at a shared edge), Enter opens the
 piano roll, U/P/T run the clip preset buttons (T explains when there's nothing to load), and the
-key turns the piano back on; Export → New → Import round-trips the project and names it after the
+key turns the piano back on; the Loop button shows the default four-bar loop, dragging its end marker
+makes a two-bar loop (one undo step) and playback jumps back into it; Export → New → Import round-trips the project and names it after the
 file; a reload restores the autosave; a starter preset loads onto a track (undoably), saves back into
 the library, renames, exports as `.chippreset`, deletes and re-imports; the song exports as WAV; MIDI can be enabled and a fake MIDI keyboard's note plays,
 lights the MIDI activity light and stops on note-off, and is ignored with 'MIDI off'; and no
-console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-light`) land in
+console errors or HTTP ≥400 responses. Screenshots (`1-initial`, `2-note`, `3-arrangement`, `4-piano-roll`, `5-loop`, `6-light`) land in
 `tmp/run-chip-daw/` (gitignored). **Look at them.**
 
 Same check against the production build served under `/chip-daw/`, exactly as GitHub Pages serves it
@@ -127,7 +128,8 @@ combobox `Move to folder`, textbox `Library preset name`; preset editor: textbox
 clips selected `Make unique`, `Use track preset`, `Load to track`, `Show track preset`; read what
 it shows with `eval chipDaw.session.presetView` and the track's own preset with
 `eval chipDaw.session.selectedTrackPreset`; `Quantize`,
-`Quantize selected`, `Fit`, and per sequencer/effect box `<Name> on` (bypass toggle),
+`Quantize selected`, `Fit`, combobox `Lane` (`Velocity`, or a param name such as `Level`,
+`Cutoff`; ones with automation read `● Level`), button `Clear` (the lane's automation), and per sequencer/effect box `<Name> on` (bypass toggle),
 `Move <Name> left`/`right`, `Remove <Name>`; comboboxes `Add sequencer`, `Add effect` (options
 `Arpeggiator`; `Bitcrush`, `Filter`, `Delay`, `Reverb`) and `<Name> type` (replace a box); tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
 `1/32`; img `MIDI activity` (its `title` is the last message); spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
@@ -139,9 +141,17 @@ notes, else clips): `Delete`/`Backspace`, `Control+a`, `Control+c`/`v`/`d`; in t
 `ArrowUp`/`ArrowDown` transpose (Shift: octave), `ArrowLeft`/`ArrowRight` move by the grid.
 `Control+s` export, `Control+o` import.
 
-Timeline canvas (`.timeline-canvas`, default zoom): ruler `y` 0–24, track `N` (0-based) lane
-centre `y = 24 + 56·N + 28`, `x = 112` px per bar (28 px per beat), so bar `B` (1-based) starts at
-`x = 112·(B−1)`. Read clip state with `eval chipDaw.session.project.tracks.flatMap(...)`.
+Timeline canvas (`.timeline-canvas`, default zoom): ruler `y` 0–24 (Shift-drag selects bars), tempo
+lane `y` 24–80 when shown (toggle button `Tempo lane` in the top bar; shown by default): tempo line
+24–66 (click adds a point, Shift-click toggles its ramp, double-click deletes); time-signature strip
+66–80 (double-click opens the editor with spinbutton `Beats per bar`, comboboxes `Beat value` and
+`Subdivision` (parts per beat: 3 for triplets...), buttons `Set`, `Delete`, `Cancel`). Track `N`
+(0-based) lane centre `y = 80 + 56·N + 28` (with the tempo lane hidden, `24 + 56·N + 28`),
+`x = 112` px per bar of 4/4 (28 px per beat), so bar `B` (1-based) starts at `x = 112·(B−1)` while
+the song is in 4/4. Buttons `Insert bars` / `Delete bars` (corner; Ctrl+I, Ctrl+Delete) act on
+`chipDaw.session.barSelection`, or the bar at the playhead. Read clip state with
+`eval chipDaw.session.project.tracks.flatMap(...)` and the tempo map with
+`eval chipDaw.session.project.tempoMap`.
 
 Piano roll canvas (`.piano-roll-canvas`, 1440×300 at the default viewport): it opens fitted to
 the clip, so for a clip of `L` ticks with no notes, `x(tick) = 56 + tick·(W − 68)/L` (tick
@@ -211,6 +221,10 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
   `*-at` commands with the coordinates above, then check results through `eval chipDaw.session…`.
 - **Clicking an empty lane moves the playhead when stopped.** It's how you place the paste
   position (`click-at canvas 2 10` on the ruler also works). Paste goes to the selected track.
+- **Loop markers are on the ruler** (y < 24) and only while the loop is on (button `Loop`). At the
+  default zoom the default loop's end marker is at x = 448 (bar 5); `drag-at .timeline-canvas 448
+  10 224 10` moves it to bar 3. Read the region with `eval chipDaw.session.project.loop` and the
+  toggle with `eval chipDaw.session.loopEnabled`.
 - **Recording from a stop counts in 4 beats first** (2 s at 120 BPM): after Record + Play, wait
   ~2.1 s before playing notes (`chipDaw.session.countIn` is the beats left; `.count-in` shows it).
   Arm Record while already playing to punch in without a count-in.

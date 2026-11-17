@@ -17,6 +17,21 @@ function sixtyDbCoef(seconds: number, sampleRate: number): number {
   return Math.exp(Math.log(1e-3) / (Math.max(seconds, 1e-4) * sampleRate));
 }
 
+/** Updates `shape` in place (no allocation: automation can change it every block). */
+export function setEnvelopeShape(
+  shape: EnvelopeShape,
+  attack: number,
+  decay: number,
+  sustain: number,
+  release: number,
+  sampleRate: number,
+): void {
+  shape.attackStep = 1 / Math.max(1, attack * sampleRate);
+  shape.decayCoef = sixtyDbCoef(decay, sampleRate);
+  shape.sustain = Math.min(1, Math.max(0, sustain));
+  shape.releaseCoef = sixtyDbCoef(release, sampleRate);
+}
+
 export function envelopeShape(
   attack: number,
   decay: number,

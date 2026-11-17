@@ -34,9 +34,13 @@ import {
   projectNameFromFile,
   serializeProject,
 } from '../../model/project-file';
+import { targetFor } from '../../model/automation';
+import type { RecordedParamMove } from '../../model/automation-commands';
+import { constrainParam, getParamDescriptor } from '../../model/boxes/registry';
 import { findPresetById, presetUsage, type PresetTarget } from '../../model/presets';
-import { bpmAt, ticksPerBar, ticksPerSecond } from '../../model/time';
-import type { Clip, Note, Preset, Project, Tick, Track } from '../../model/types';
+import { deleteBars, insertBars } from '../../model/tempo-commands';
+import { barAt, bpmAt, ticksPerSecond } from '../../model/time';
+import type { BoxInstance, Clip, Note, Preset, Project, Tick, Track } from '../../model/types';
 import { Autosaver, loadAutosave } from '../../persistence/autosave';
 import {
   chooseSaveTarget,
@@ -46,6 +50,7 @@ import {
   WAV_FILE,
 } from '../../persistence/files';
 import type { RenderReply, RenderRequest } from '../../audio/render.worker';
+import { buildCurves, type AutomationCurve } from '../../engine/automation';
 import { COUNT_IN_BEATS } from '../../engine/engine';
 import { songEndTick } from '../../engine/offline-render';
 import { adjacentClip, clipEdgeJump, closestClip, type Direction } from '../arrangement/navigation';
@@ -94,6 +99,13 @@ export type PresetView =
       canMakeUnique: boolean;
     }
   | { kind: 'mixed'; track: Track; trackIndex: number; clipIds: string[] };
+
+/**
+ * What the piano roll's bottom lane shows: velocities, or the automation of one param. `boxId`
+ * is a box of the clip's preset, or (for a lane whose box is gone) the lane's own target id.
+ */
+export type LaneChoice =
+  { kind: 'velocity' } | { kind: 'automation'; boxId: string; paramId: string };
 
 export interface Notice {
   kind: 'info' | 'error';
@@ -178,6 +190,10 @@ class Session {
   recordArmed = $state(false);
   overdub = $state(false);
   metronome = $state(false);
+  /** Whether the arrangement shows the tempo lane (tempo and time-signature changes). */
+  tempoLaneVisible = $state(true);
+  /** Loop on: playback jumps from the loop end (project.loop) back to its start. */
+  loopEnabled = $state(false);
   /** Last position reported by (or sent to) the engine. See `playheadAt` for a smooth value. */
   position = $state<Tick>(0);
   #positionTime = 0;
@@ -189,6 +205,8 @@ class Session {
 
   // Clip selection and clipboard (not undoable).
   selectedClipIds = $state.raw<ReadonlySet<string>>(new Set());
+  /** Whole bars selected on the ruler (Shift-drag), for inserting or deleting bars. */
+  barSelection = $state.raw<{ startTick: Tick; endTick: Tick } | null>(null);
   /** Copied clips, each with its preset (in case the original is gone when pasting). */
   #clipboard: { trackOffset: number; clip: Clip; preset: Preset | undefined }[] = [];
 
@@ -199,6 +217,20 @@ class Session {
   selectedNoteIds = $state.raw<ReadonlySet<string>>(new Set());
   /** Piano roll snap grid in ticks. */
   pianoRollGrid = $state<Tick>(PPQ / 4);
+  /** The piano roll's bottom lane. */
+  pianoRollLane = $state.raw<LaneChoice>({ kind: 'velocity' });
+  /**
+   * Knob values moved while recording, shown on the knobs ("boxId:paramId" → value). They're
+   * recorded as automation; the preset keeps its own values.
+   */
+  liveParams = $state.raw<Readonly<Record<string, number>>>({});
+  /**
+   * Knob moves of the recording pass in progress (song ticks, from the playhead), for the
+   * piano roll to draw live. A new pass starts with the latched values (see the engine).
+   */
+  liveMoves = $state.raw<readonly RecordedParamMove[]>([]);
+  /** The last move per param ("boxId:paramId"): what each new pass starts with. */
+  #latchedMoves: Record<string, RecordedParamMove> = {};
   /** Notes copied in the piano roll, ticks relative to the first one. */
   #noteClipboard: Note[] = [];
 
@@ -228,18 +260,27 @@ class Session {
         this.masterPeak = message.master;
       } else if (message.type === 'transport') {
         this.playing = message.playing;
+        if (!message.playing) this.#endKnobRecording();
         this.countIn = message.countIn;
         // A report from before the engine got our latest seek would move the playhead back.
         if (message.seekSeq >= this.#seekSeq) this.#setPosition(message.tick);
       } else if (message.type === 'takeStarted') {
         this.liveTake = { startTick: message.startTick, notes: [] };
+        this.liveMoves = Object.values(this.#latchedMoves).map((m) => ({
+          ...m,
+          tick: message.startTick,
+        }));
       } else if (message.type === 'takeNote') {
         const notes = [...(this.liveTake?.notes ?? [])];
         notes[message.index] = { ...message.note, held: message.held };
         this.liveTake = { startTick: this.liveTake?.startTick ?? message.note.startTick, notes };
       } else if (message.type === 'recorded') {
         this.liveTake = null;
-        if (message.take.notes.length > 0) this.run(recordTake(message.take, this.overdub));
+        this.liveMoves = [];
+        const { take } = message;
+        if (take.notes.length > 0 || (take.params?.length ?? 0) > 0) {
+          this.run(recordTake(take, this.overdub));
+        }
       }
     });
   }
@@ -252,6 +293,20 @@ class Session {
   get selectedTrackPreset(): Preset | undefined {
     const track = this.selectedTrack;
     return track ? findPresetById(this.project, track.presetId) : undefined;
+  }
+
+  /**
+   * What an edit in the preset editor would change, to highlight it in the arrangement (null
+   * when the editor isn't showing an editable preset). A track preset edit changes only that
+   * track: clips using the same preset keep their sound (copy on write). A clip preset edit
+   * changes every clip sharing it, on any track, and every track whose preset it is.
+   */
+  get presetReach(): { trackIds: ReadonlySet<string>; clipIds: ReadonlySet<string> } | null {
+    const view = this.bottomTab === 'preset' ? this.presetView : null;
+    if (!view || view.kind === 'mixed') return null;
+    if (view.kind === 'track') return { trackIds: new Set([view.track.id]), clipIds: new Set() };
+    const usage = presetUsage(this.project, view.preset.id);
+    return { trackIds: new Set(usage.trackIds), clipIds: new Set(usage.clipIds) };
   }
 
   /** What the preset editor shows (see PresetView). */
@@ -380,7 +435,7 @@ class Session {
     this.showNotice(
       this.keyboardPiano
         ? 'Computer keyboard plays notes.'
-        : 'Computer keyboard shortcuts: R record, O overdub, M metronome, arrows select clips, A/D clip edges, Enter piano roll, U/P/T clip preset buttons.',
+        : 'Computer keyboard shortcuts: R record, O overdub, M metronome, L loop, arrows select clips, A/D clip edges, Enter piano roll, U/P/T clip preset buttons.',
     );
   }
 
@@ -408,7 +463,13 @@ class Session {
   playheadAt(now: number = performance.now()): Tick {
     if (!this.playing) return this.position;
     const bpm = bpmAt(this.project.tempoMap, this.position);
-    return this.position + ((now - this.#positionTime) / 1000) * ticksPerSecond(bpm);
+    const tick = this.position + ((now - this.#positionTime) / 1000) * ticksPerSecond(bpm);
+    // Between reports, wrap around the loop like the engine does.
+    const { startTick, endTick } = this.project.loop;
+    if (this.loopEnabled && this.position < endTick && tick >= endTick) {
+      return startTick + ((tick - endTick) % (endTick - startTick));
+    }
+    return tick;
   }
 
   #setPosition(tick: Tick): void {
@@ -448,6 +509,7 @@ class Session {
 
   toggleRecord(): void {
     this.recordArmed = !this.recordArmed;
+    if (!this.recordArmed) this.#endKnobRecording();
     this.#engine.send({ type: 'setRecord', armed: this.recordArmed });
   }
 
@@ -459,6 +521,11 @@ class Session {
   toggleMetronome(): void {
     this.metronome = !this.metronome;
     this.#engine.send({ type: 'setMetronome', enabled: this.metronome });
+  }
+
+  toggleLoop(): void {
+    this.loopEnabled = !this.loopEnabled;
+    this.#engine.send({ type: 'setLoop', enabled: this.loopEnabled });
   }
 
   // --- Clips ------------------------------------------------------------------------------
@@ -530,9 +597,43 @@ class Session {
   createEmptyClip(trackIndex: number, startTick: Tick): void {
     const track = this.project.tracks[trackIndex];
     if (!track) return;
-    const bar = ticksPerBar(this.project.tempoMap.meters[0]!);
-    const clip = createClip(startTick, bar, track.presetId);
+    const bar = barAt(this.project.tempoMap, startTick);
+    const clip = createClip(startTick, bar.start + bar.length - startTick, track.presetId);
     this.#placeAndSelect([{ trackId: track.id, clip }], 'Add clip');
+  }
+
+  // --- Bars ----------------------------------------------------------------------------------
+
+  /** The bars Insert/Delete act on: the selection, or the bar under the playhead. */
+  get barRange(): { startTick: Tick; endTick: Tick; count: number } {
+    const map = this.project.tempoMap;
+    const range =
+      this.barSelection ??
+      (() => {
+        const bar = barAt(map, this.position);
+        return { startTick: bar.start, endTick: bar.start + bar.length };
+      })();
+    const count = barAt(map, range.endTick - 1).index - barAt(map, range.startTick).index + 1;
+    return { ...range, count };
+  }
+
+  /** Inserts as many empty bars as are selected (or one) where the selection starts. */
+  insertBars(): void {
+    const { startTick, endTick, count } = this.barRange;
+    this.run(insertBars(startTick, endTick - startTick));
+    const at = barAt(this.project.tempoMap, startTick).index + 1;
+    this.showNotice(`Inserted ${count === 1 ? 'a bar' : `${count} bars`} at bar ${at}`);
+  }
+
+  /** Deletes the selected bars (or the one under the playhead), closing the gap. */
+  deleteBars(): void {
+    const { startTick, endTick, count } = this.barRange;
+    const at = barAt(this.project.tempoMap, startTick).index + 1;
+    this.run(deleteBars(startTick, endTick));
+    this.barSelection = null;
+    if (this.position > startTick)
+      this.seek(Math.max(startTick, this.position - (endTick - startTick)));
+    this.showNotice(`Deleted ${count === 1 ? `bar ${at}` : `${count} bars from bar ${at}`}`);
   }
 
   // --- Keyboard navigation ---------------------------------------------------------------
@@ -640,6 +741,71 @@ class Session {
     } else {
       this.loadSelectedClipPresetToTrack();
     }
+  }
+
+  // --- Automation ---------------------------------------------------------------------------
+
+  /**
+   * While recording (or counting in to record), knob moves in the preset editor (track or clip
+   * preset) are recorded as automation instead of changing the preset.
+   */
+  get recordingKnobs(): boolean {
+    return this.recordArmed && (this.playing || this.countIn > 0);
+  }
+
+  /** A knob moved while recording: heard right away, recorded as automation. */
+  moveParamWhileRecording(box: BoxInstance, paramId: string, value: number): void {
+    const track = this.selectedTrack;
+    const view = this.presetView;
+    const preset = view && view.kind !== 'mixed' ? view.preset : undefined;
+    const param = getParamDescriptor(box.type, paramId);
+    if (!track || !preset || !param) return;
+    const constrained = constrainParam(param, value);
+    this.#engine.send({
+      type: 'paramMove',
+      trackId: track.id,
+      target: targetFor(preset, box),
+      paramId,
+      value: constrained,
+    });
+    this.liveParams = { ...this.liveParams, [`${box.id}:${paramId}`]: constrained };
+    // For the live preview: stamped at the playhead (the engine stamps the saved ones exactly).
+    const move: RecordedParamMove = {
+      trackId: track.id,
+      target: targetFor(preset, box),
+      paramId,
+      value: constrained,
+      tick: this.liveTake ? this.playheadAt() : this.position,
+    };
+    this.#latchedMoves[`${box.id}:${paramId}`] = move;
+    if (this.liveTake) this.liveMoves = [...this.liveMoves, move];
+  }
+
+  #curveCache: { clips: readonly Clip[]; preset: Preset; curves: AutomationCurve[] } | null = null;
+
+  /**
+   * Automation curves of the clips on `track` that play with `preset` (the same curves the
+   * engine plays), to show automated knobs moving. Cached until the clips or preset change.
+   */
+  automationCurves(track: Track, preset: Preset): AutomationCurve[] {
+    const cache = this.#curveCache;
+    if (cache && cache.clips === track.clips && cache.preset === preset) return cache.curves;
+    const clips = track.clips.filter((c) => c.presetId === preset.id);
+    const curves = buildCurves(clips, preset);
+    this.#curveCache = { clips: track.clips, preset, curves };
+    return curves;
+  }
+
+  /** The value a knob shows while recording, if it was moved. */
+  liveParamValue(boxId: string, paramId: string): number | undefined {
+    return this.liveParams[`${boxId}:${paramId}`];
+  }
+
+  /** Recording stopped: knobs show the preset's own values again (the engine resets too). */
+  #endKnobRecording(): void {
+    if (Object.keys(this.liveParams).length > 0) this.liveParams = {};
+    this.#latchedMoves = {};
+    if (this.liveMoves.length > 0) this.liveMoves = [];
   }
 
   /** Shows the track preset in the editor (deselects the clips). */
@@ -766,6 +932,7 @@ class Session {
   clearSelection(): void {
     if (this.#notesFocused()) this.selectedNoteIds = new Set();
     else this.selectedClipIds = new Set();
+    this.barSelection = null;
   }
 
   #addNotesAndSelect(notes: Note[], label: string): void {
@@ -784,6 +951,7 @@ class Session {
     this.liveTake = null;
     this.selectedClipIds = new Set();
     this.selectedNoteIds = new Set();
+    this.barSelection = null;
     this.editingClip = null;
     this.bottomTab = 'preset';
     this.selectedTrackIndex = 0;
@@ -942,6 +1110,7 @@ class Session {
       await this.#engine.start(() => [
         { type: 'loadProject', project: this.#history.state },
         { type: 'setMetronome', enabled: this.metronome },
+        { type: 'setLoop', enabled: this.loopEnabled },
         { type: 'setRecord', armed: this.recordArmed },
         { type: 'setOverdub', enabled: this.overdub },
         { type: 'seek', tick: this.position, seq: ++this.#seekSeq },

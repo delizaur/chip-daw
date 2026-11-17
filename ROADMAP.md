@@ -42,20 +42,32 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 - [x] Engine: a live chain per track plus a chain per clip preset (idle chains sleep); overdub and piano roll auditions play through the clip's preset
 - [x] Preset editor shows the clip preset when a clip is selected: header with "used by N clips", Make unique, Use track preset, Load to track
 - [x] Clip preset names on the timeline
+- [x] While the preset editor is open, the clips and tracks an edit would change are highlighted
 
 ## Phase 3D: Workflow ✅
 - [x] 4-beat count-in (with clicks and a big countdown) before recording from a stop
 - [x] The key left of 1 turns the computer keyboard piano off; its letter keys become shortcuts: R record, O overdub, M metronome, arrows select clips, A/D jump between clip edges, Enter opens the piano roll, U/P/T clip preset buttons
 
+## Phase 3E: Loop ✅
+- [x] Loop button in the top bar (yellow when on); loop region saved with the project (format 3), first four bars by default
+- [x] Start/end markers on the ruler with lines down through all tracks, dragged to set the loop (snapped, undoable)
+- [x] Sample-accurate loop playback; recording makes one pass per time around (layered with overdub)
+
 ## Phase 4: Time and automation
-- [ ] Clip automation lanes; draw/edit points; hold-last-value + chase on seek
-- [ ] Re-link automation to matching boxes when a clip's preset changes; show unmatched lanes as inactive
-- [ ] Record automation by moving params while recording (written into the clip under the playhead; a clip is created if none)
-- [ ] Insert/delete bars: shift all clips and tempo/meter events after a point, as one undo step
-- [ ] Tempo map UI: BPM / meter / subdivision changes; tempo automation (linear ramps)
+- [x] Clip automation lanes; draw/edit points (piano roll Lane menu); hold-last-value + chase on seek
+- [x] Re-link automation to matching boxes when a clip's preset changes; show unmatched lanes as inactive
+- [x] Record automation by moving params while recording (written into the clip under the playhead; a clip is created if none)
+- [x] A knob moved while recording owns its param until recording stops (existing automation pauses; what's saved matches what was heard); a yellow line previews the moves in the recording region
+- [x] Automated knobs are marked (●) and follow the automation while playing
+- [x] Insert/delete bars (select bars by Shift-dragging the ruler): shift all clips, tempo/meter events and the loop after a point, as one undo step
+- [x] Tempo lane under the ruler: tempo changes with jumps or linear ramps; time-signature changes (bars, grids, metronome and count-in follow them)
 
 ## Phase 5: Sounds and polish
-- [ ] More synth engines: Game Boy-style wavetable, FM (Genesis-style), SID-style, possibly a sampler
+Order: the synth engines first (one at a time: FM, Game Boy, SID), then the rest of Phase 4, then the rest of Phase 5.
+- [x] FM synth (Genesis-style, 2 operators), with starter presets
+- [x] Game Boy-style wavetable synth ("Wave": 8 preset 4-bit waves with a morph knob), with starter presets
+- [x] SID-style synth (Commodore 64: tri/saw/pulse with PWM/noise, ring mod and sync, shared resonant filter), with starter presets
+- [ ] Possibly a sampler (needs audio stored in projects and the library)
 - [ ] Visual polish pass on the OP-1-inspired look
 - [ ] PWA: installable, works offline
 - [ ] Performance profiling; move hot DSP to WASM only if needed
@@ -67,6 +79,8 @@ Recorded clips keep their sound, like the OP-1's tape, but stay editable because
 - [ ] Latency tuning on devices
 
 ## Later
+- Automation editing: select several points (move, delete, copy/paste), switch a point between ramp and step, show automation on clips in the arrangement
+- Record automation from a MIDI controller's knobs (map a CC to a param)
 - Loop / live-recording workflow (an alternative to the arrangement view)
 - MP3 export
 - Cloud upload and sharing of projects
