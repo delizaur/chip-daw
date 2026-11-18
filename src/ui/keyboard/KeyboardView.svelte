@@ -8,14 +8,17 @@
 <script lang="ts">
   import Toggle from '../controls/Toggle.svelte';
   import { MAX_OCTAVE, MIN_OCTAVE, PIANO_KEYS, VELOCITY_LEVELS } from '../input/computer-keyboard';
-  import { session } from '../state/session.svelte';
+  import { BOTTOM_MIN_HEIGHT, session } from '../state/session.svelte';
   import { trackColor } from '../theme';
   import {
     isBlack,
     keyLight,
     layoutKeys,
-    NOTE_NAMES,
+    noteSpellings,
     pitchName,
+    rootNames,
+    spelledPitchName,
+    spellingName,
     scaleNotes,
     SCALES,
     whiteKeyCount,
@@ -26,11 +29,30 @@
 
   const keys = layoutKeys();
   const whites = whiteKeyCount();
-  /** Narrowest a white key gets; below that the piano scrolls sideways. */
-  const MIN_KEY_WIDTH = 18;
+  /** A white key's length over its width. */
+  const KEY_RATIO = 8.5;
+  /** Room above the keys for the strip marking the computer keyboard's range. */
+  const STRIP = 8;
+  /** The key width the labels' sizes are set for; they scale with the keys. */
+  const BASE_KEY_WIDTH = 27;
 
-  let scrollerWidth = $state(0);
-  const keyWidth = $derived(Math.max(MIN_KEY_WIDTH, scrollerWidth / whites));
+  // The keys fill the height the piano has with the panel at its default height, and keep
+  // that size when the panel is made taller. (Wider than the panel, the piano scrolls.)
+  let root: HTMLDivElement | undefined = $state();
+  let scrollerHeight = $state(0);
+  /** How much taller than its default height the bottom panel is. */
+  let extra = $state(0);
+  $effect(() => {
+    const panel = root?.closest('.bottom-panel');
+    if (!panel) return;
+    const observer = new ResizeObserver(() => {
+      extra = Math.max(0, panel.getBoundingClientRect().height - BOTTOM_MIN_HEIGHT);
+    });
+    observer.observe(panel);
+    return () => observer.disconnect();
+  });
+  const pianoHeight = $derived(Math.max(100, scrollerHeight - extra));
+  const keyWidth = $derived((pianoHeight - STRIP) / KEY_RATIO);
 
   /** The computer key letter for each pitch it plays at the current octave. */
   const letters = $derived.by(() => {
@@ -49,6 +71,11 @@
   const rangeKeys = $derived(keys.filter((k) => k.pitch >= range.low && k.pitch <= range.high));
 
   const inScale = $derived(settings.scaleOn ? scaleNotes(settings.root, settings.scale) : null);
+  /** How each note is named: as the scale spells it (sharps or flats), else with sharps. */
+  const spellings = $derived(
+    noteSpellings(settings.scaleOn ? { root: settings.root, scale: settings.scale } : null),
+  );
+  const roots = $derived(rootNames(settings.scale));
 
   const tracks = $derived(session.project.tracks);
   const lights = $derived.by(() => {
@@ -141,7 +168,7 @@
   const velocityIndex = $derived(VELOCITY_LEVELS.findIndex((v) => v >= session.keyboardVelocity));
 </script>
 
-<div class="keyboard-view">
+<div class="keyboard-view" bind:this={root}>
   <div class="controls">
     <div class="group" aria-label="Computer keyboard">
       <span class="status" class:off={!session.keyboardPiano}>
@@ -206,7 +233,7 @@
           value={settings.root}
           onchange={(e) => settings.set({ root: Number(e.currentTarget.value) })}
         >
-          {#each NOTE_NAMES as name, i (name)}
+          {#each roots as name, i (i)}
             <option value={i}>{name}</option>
           {/each}
         </select>
@@ -223,7 +250,7 @@
     </div>
   </div>
 
-  <div class="scroller" bind:this={scroller} bind:clientWidth={scrollerWidth}>
+  <div class="scroller" bind:this={scroller} bind:clientHeight={scrollerHeight}>
     <!-- Mouse input for the whole piano (one handler instead of 88); keys aren't tab stops,
          the computer keyboard and MIDI play them. -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -231,6 +258,8 @@
       class="piano"
       aria-label="Piano keyboard"
       style:width="{keyWidth * whites}px"
+      style:height="{pianoHeight}px"
+      style:--k={keyWidth / BASE_KEY_WIDTH}
       {onpointerdown}
       {onpointerover}
     >
@@ -269,7 +298,9 @@
             class="name"
             class:hidden={!settings.noteNames && (pitchClass !== 0 || isBlack(key.pitch))}
           >
-            {key.black ? NOTE_NAMES[pitchClass] : pitchName(key.pitch)}
+            {key.black
+              ? spellingName(spellings[pitchClass]!)
+              : spelledPitchName(key.pitch, spellings[pitchClass]!)}
           </span>
         </div>
       {/each}
@@ -283,7 +314,7 @@
     --key-white: #ecebf0;
     --key-white-out: #a9a7b1;
     --key-black: #1d1b22;
-    --key-black-in: #3b3743;
+    --key-black-out: #5d5a66;
     --key-ink: #2a2830;
     display: flex;
     flex-direction: column;
@@ -366,10 +397,8 @@
 
   .piano {
     position: relative;
-    height: 100%;
-    max-height: 240px;
-    min-height: 120px;
-    padding-top: 8px;
+    /* Centred when narrower than the panel. */
+    margin: 0 auto;
     touch-action: none;
     user-select: none;
   }
@@ -394,8 +423,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    gap: 4px;
-    padding-bottom: 6px;
+    gap: calc(4px * var(--k));
+    padding-bottom: calc(6px * var(--k));
     background: var(--key-white);
     box-shadow: inset -1px 0 0 #8d8b95;
     color: var(--key-ink);
@@ -409,15 +438,15 @@
   .key.black {
     z-index: 1;
     bottom: 38%;
-    padding-bottom: 4px;
+    padding-bottom: calc(4px * var(--k));
     background: var(--key-black);
     box-shadow: none;
     color: #e9e8ee;
   }
 
-  /* With a scale on, its black keys are a little lighter than the others. */
-  .key.black:has(.dot) {
-    background: var(--key-black-in);
+  /* With a scale on, the keys outside it are greyed out, white and black alike. */
+  .key.black.out {
+    background: var(--key-black-out);
   }
 
   .key.lit.black,
@@ -426,27 +455,27 @@
   }
 
   .dot {
-    width: 6px;
-    height: 6px;
+    width: calc(6px * var(--k));
+    height: calc(6px * var(--k));
     border-radius: 50%;
     background: currentColor;
     opacity: 0.45;
   }
 
   .dot.root {
-    width: 8px;
-    height: 8px;
+    width: calc(8px * var(--k));
+    height: calc(8px * var(--k));
     background: var(--accent);
     opacity: 1;
   }
 
   .letter {
-    min-width: 14px;
-    padding: 0 2px;
+    min-width: calc(14px * var(--k));
+    padding: 0 calc(2px * var(--k));
     border: 1px solid currentColor;
     font-family: var(--font-mono);
-    font-size: 10px;
-    line-height: 14px;
+    font-size: calc(10px * var(--k));
+    line-height: calc(14px * var(--k));
     text-align: center;
   }
 
@@ -455,13 +484,13 @@
   }
 
   .name {
-    font-size: 10px;
+    font-size: calc(10px * var(--k));
     line-height: 1;
     white-space: nowrap;
   }
 
   .black .name {
-    font-size: 9px;
+    font-size: calc(9px * var(--k));
   }
 
   .hidden {

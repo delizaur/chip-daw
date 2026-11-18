@@ -108,3 +108,87 @@ export function keyLight(
   tracks.sort((a, b) => Number(b === selectedTrack) - Number(a === selectedTrack) || a - b);
   return { tracks, live: false };
 }
+
+// --- Spelling: sharps or flats, as the scale reads best -------------------------------------
+
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const;
+/** Pitch class of each natural letter. */
+const NATURALS = [0, 2, 4, 5, 7, 9, 11] as const;
+const ACCIDENTALS: Record<number, string> = { [-2]: '𝄫', [-1]: '♭', 0: '', 1: '♯', 2: '𝄪' };
+
+/** A note's spelling: a letter (0 = C ... 6 = B) and its accidental (-2 = 𝄫 ... 2 = 𝄪). */
+export interface Spelling {
+  letter: number;
+  accidental: number;
+}
+
+/** The offset from a natural to `pitchClass`, in -6..5. */
+const offset = (pitchClass: number, letter: number) =>
+  ((((pitchClass - NATURALS[letter]!) % 12) + 18) % 12) - 6;
+
+export const spellingName = (s: Spelling) => LETTERS[s.letter]! + ACCIDENTALS[s.accidental]!;
+
+/** A scale spelled from a root spelling: one letter per degree, in order. */
+function spellFrom(root: Spelling, rootClass: number, scale: ScaleId): Spelling[] {
+  const steps = SCALES.find((s) => s.id === scale)!.steps;
+  return steps.map((step, degree) => {
+    const letter = (root.letter + degree) % 7;
+    return { letter, accidental: offset((rootClass + step) % 12, letter) };
+  });
+}
+
+/**
+ * The scale on `root` spelled with the fewest accidentals: the root is tried as its sharp,
+ * natural or flat name (C♯ or D♭...). On a tie (F♯ / G♭ major, 6 each) flats win.
+ */
+export function spellScale(root: number, scale: ScaleId): Spelling[] {
+  let best: Spelling[] | null = null;
+  let bestScore = Infinity;
+  for (let letter = 0; letter < 7; letter++) {
+    const accidental = offset(root, letter);
+    if (Math.abs(accidental) > 1) continue;
+    const spelled = spellFrom({ letter, accidental }, root, scale);
+    const count = spelled.reduce((sum, s) => sum + Math.abs(s.accidental), 0);
+    const flats = spelled.some((s) => s.accidental < 0);
+    // Fewest accidentals, then flats over sharps.
+    const score = count * 2 + (flats ? 0 : 1);
+    if (score < bestScore) {
+      best = spelled;
+      bestScore = score;
+    }
+  }
+  return best!;
+}
+
+const SHARP_NAMES = NOTE_NAMES;
+const FLAT_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
+
+/**
+ * How to name each pitch class: as the scale spells it (so B♭ major shows B♭ and E♭, and
+ * F♯ major shows E♯), and the notes outside it with flats when the scale uses flats, else
+ * sharps. With no scale, sharps.
+ */
+export function noteSpellings(scale: { root: number; scale: ScaleId } | null): Spelling[] {
+  const names = new Array<Spelling>(12);
+  const spelled = scale ? spellScale(scale.root, scale.scale) : [];
+  const flats = spelled.some((s) => s.accidental < 0);
+  for (let pc = 0; pc < 12; pc++) {
+    const name = (flats ? FLAT_NAMES : SHARP_NAMES)[pc]!;
+    const letter = LETTERS.indexOf(name[0] as (typeof LETTERS)[number]);
+    names[pc] = { letter, accidental: name.length > 1 ? (flats ? -1 : 1) : 0 };
+  }
+  for (const s of spelled) names[(NATURALS[s.letter]! + s.accidental + 12) % 12] = s;
+  return names;
+}
+
+/**
+ * A key's name with its octave, from its spelling. The octave goes with the letter, so the B
+ * below middle C spelled C♭ is C♭4 and the C spelled B♯ is B♯3.
+ */
+export function spelledPitchName(pitch: number, spelling: Spelling): string {
+  return `${spellingName(spelling)}${Math.floor((pitch - spelling.accidental) / 12) - 1}`;
+}
+
+/** The root note's name for each pitch class, as `scale` reads best (for the root menu). */
+export const rootNames = (scale: ScaleId) =>
+  Array.from({ length: 12 }, (_, pc) => spellingName(spellScale(pc, scale)[0]!));

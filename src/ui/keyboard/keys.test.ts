@@ -3,9 +3,15 @@ import {
   isBlack,
   keyLight,
   layoutKeys,
+  noteSpellings,
+  NOTE_NAMES,
   pitchName,
+  rootNames,
   scaleNotes,
   SCALES,
+  spelledPitchName,
+  spellingName,
+  spellScale,
   whiteKeyCount,
 } from './keys';
 
@@ -72,5 +78,70 @@ describe('keyLight', () => {
     expect(keyLight(60, new Map(), sounding, 0)).toEqual({ tracks: [0, 2], live: false });
     expect(keyLight(62, new Map(), sounding, 3)).toEqual({ tracks: [3, 2], live: false });
     expect(keyLight(64, new Map(), sounding, 0)).toBeNull();
+  });
+});
+
+describe('spelling', () => {
+  const names = (root: number, scale: Parameters<typeof spellScale>[1]) =>
+    spellScale(root, scale).map(spellingName).join(' ');
+
+  it('spells a scale with the fewest accidentals', () => {
+    expect(names(10, 'major')).toBe('B♭ C D E♭ F G A');
+    expect(names(1, 'major')).toBe('D♭ E♭ F G♭ A♭ B♭ C');
+    expect(names(11, 'major')).toBe('B C♯ D♯ E F♯ G♯ A♯');
+    expect(names(1, 'minor')).toBe('C♯ D♯ E F♯ G♯ A B');
+    expect(names(8, 'minor')).toBe('G♯ A♯ B C♯ D♯ E F♯');
+    expect(names(9, 'harmonicMinor')).toBe('A B C D E F G♯');
+  });
+
+  it('prefers flats with 6 accidentals either way', () => {
+    expect(names(6, 'major')).toBe('G♭ A♭ B♭ C♭ D♭ E♭ F');
+    expect(names(3, 'minor')).toBe('E♭ F G♭ A♭ B♭ C♭ D♭');
+  });
+
+  it('names the root menu for the scale', () => {
+    expect(rootNames('major')).toEqual([
+      'C',
+      'D♭',
+      'D',
+      'E♭',
+      'E',
+      'F',
+      'G♭',
+      'G',
+      'A♭',
+      'A',
+      'B♭',
+      'B',
+    ]);
+    expect(rootNames('minor')).toEqual([
+      'C',
+      'C♯',
+      'D',
+      'E♭',
+      'E',
+      'F',
+      'F♯',
+      'G',
+      'G♯',
+      'A',
+      'B♭',
+      'B',
+    ]);
+  });
+
+  it('names keys as the scale spells them, the others with its sharps or flats', () => {
+    const bFlat = noteSpellings({ root: 10, scale: 'major' }).map(spellingName);
+    expect(bFlat.join(' ')).toBe('C D♭ D E♭ E F G♭ G A♭ A B♭ B');
+    // F♯ harmonic minor: F♯ G♯ A B C♯ D E♯; C♯ harmonic minor: C♯ D♯ E F♯ G♯ A B♯.
+    expect(spellingName(noteSpellings({ root: 6, scale: 'harmonicMinor' })[5]!)).toBe('E♯');
+    expect(spellingName(noteSpellings({ root: 1, scale: 'harmonicMinor' })[0]!)).toBe('B♯');
+    expect(noteSpellings(null).map(spellingName)).toEqual([...NOTE_NAMES]);
+  });
+
+  it('keeps the octave with the letter', () => {
+    expect(spelledPitchName(59, { letter: 0, accidental: -1 })).toBe('C♭4');
+    expect(spelledPitchName(60, { letter: 6, accidental: 1 })).toBe('B♯3');
+    expect(spelledPitchName(61, { letter: 1, accidental: -1 })).toBe('D♭4');
   });
 });
