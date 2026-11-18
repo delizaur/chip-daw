@@ -8,6 +8,7 @@ import { FM_RATIOS } from './boxes/fm-synth';
 import { createBox } from './boxes/registry';
 import { analogPresets } from './factory-presets-analog';
 import { drumPresets } from './factory-presets-drums';
+import { pluckPresets } from './factory-presets-pluck';
 import { SidFilter, SidMod, SidWave } from './boxes/sid-synth';
 import { WAVES } from './boxes/wave-synth';
 import { createId } from './ids';
@@ -588,6 +589,7 @@ export function factoryLibrary(): Library {
       ),
       ...analogPresets({ leads, bass, pads, fx }),
       ...drumPresets(drums),
+      ...pluckPresets({ leads, bass, pads, fx }),
     ],
   };
   return { ...library, starters: library.presets.map((p) => p.preset.name) };

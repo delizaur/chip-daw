@@ -18,6 +18,7 @@
   import { session } from '../state/session.svelte';
   import EffectScreen from './EffectScreen.svelte';
   import KitScreen from './KitScreen.svelte';
+  import NoteScreen from './NoteScreen.svelte';
   import SynthScreen from './SynthScreen.svelte';
   import { waveIcon } from './synth-visuals';
 
@@ -184,6 +185,8 @@
     <div class="body">
       {#if box.type === 'synth.drums'}
         <KitScreen lit={trackId ? session.litNotes.get(trackId) : undefined} />
+      {:else if box.type === 'synth.pluck'}
+        <NoteScreen box={shownBox} />
       {:else if isSynth && grouped}
         <!-- The envelope is drawn in its own section (see below); no wave screen. -->
       {:else if isSynth}
