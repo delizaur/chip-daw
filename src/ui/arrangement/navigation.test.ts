@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createClip } from '../../model/clips';
 import { createTrack } from '../../model/defaults';
 import type { Clip, Track } from '../../model/types';
-import { adjacentClip, clipEdgeJump, closestClip } from './navigation';
+import { clipEdgeJump } from './navigation';
 
 /** A track with clips given as [start, length], with ids "<track>:<start>". */
 function track(index: number, ...spans: [number, number][]): Track {
@@ -22,36 +22,6 @@ const tracks = [
   track(1),
   track(2, [150, 100], [500, 100]),
 ];
-
-describe('closestClip', () => {
-  it('picks the clip under or nearest the playhead on the selected track', () => {
-    expect(closestClip(tracks, 0, 50)).toEqual({ trackIndex: 0, clipId: '0:0' });
-    expect(closestClip(tracks, 0, 160)).toEqual({ trackIndex: 0, clipId: '0:200' });
-    expect(closestClip(tracks, 2, 1000)).toEqual({ trackIndex: 2, clipId: '2:500' });
-  });
-
-  it('falls back to the nearest track with clips', () => {
-    expect(closestClip(tracks, 1, 160)).toEqual({ trackIndex: 0, clipId: '0:200' });
-    expect(closestClip([track(0)], 0, 0)).toBeNull();
-  });
-});
-
-describe('adjacentClip', () => {
-  it('left/right walk the clips of the same track', () => {
-    const from = { trackIndex: 0, clipId: '0:200' };
-    expect(adjacentClip(tracks, from, 'right')).toEqual({ trackIndex: 0, clipId: '0:300' });
-    expect(adjacentClip(tracks, from, 'left')).toEqual({ trackIndex: 0, clipId: '0:0' });
-    expect(adjacentClip(tracks, { trackIndex: 0, clipId: '0:300' }, 'right')).toBeNull();
-  });
-
-  it('up/down find the clip closest in time on the next track with clips', () => {
-    const from = { trackIndex: 0, clipId: '0:200' };
-    expect(adjacentClip(tracks, from, 'down')).toEqual({ trackIndex: 2, clipId: '2:150' });
-    const late = { trackIndex: 2, clipId: '2:500' };
-    expect(adjacentClip(tracks, late, 'up')).toEqual({ trackIndex: 0, clipId: '0:300' });
-    expect(adjacentClip(tracks, from, 'up')).toBeNull();
-  });
-});
 
 describe('clipEdgeJump', () => {
   const t = tracks[0]!;

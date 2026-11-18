@@ -6,12 +6,15 @@ export interface Command<T> {
   /** Human-readable, shown in the UI as "Undo <label>". */
   label: string;
   recipe: (draft: Draft<T>) => void;
+  /** Kept with the undo step and handed back by `undo`/`redo` (e.g. where to put the playhead). */
+  meta?: unknown;
 }
 
 export interface HistoryEntry {
   label: string;
   patches: Patch[];
   inversePatches: Patch[];
+  meta?: unknown;
 }
 
 export interface HistoryChange<T> {
@@ -74,7 +77,7 @@ export class History<T> {
     if (this.#transaction) {
       appendToTransaction(this.#transaction, patches, inversePatches);
     } else {
-      this.#push({ label: command.label, patches, inversePatches });
+      this.#push({ label: command.label, patches, inversePatches, meta: command.meta });
     }
     this.#emit(patches);
   }
@@ -105,22 +108,26 @@ export class History<T> {
     }
   }
 
-  undo(): void {
+  /** Undoes the last step and returns it (undefined when there's nothing to undo). */
+  undo(): HistoryEntry | undefined {
     this.commit();
     const entry = this.#undoStack.pop();
-    if (!entry) return;
+    if (!entry) return undefined;
     this.#state = applyPatches(this.#state as object, entry.inversePatches) as T;
     this.#redoStack.push(entry);
     this.#emit(entry.inversePatches);
+    return entry;
   }
 
-  redo(): void {
+  /** Redoes the last undone step and returns it. */
+  redo(): HistoryEntry | undefined {
     this.commit();
     const entry = this.#redoStack.pop();
-    if (!entry) return;
+    if (!entry) return undefined;
     this.#state = applyPatches(this.#state as object, entry.patches) as T;
     this.#undoStack.push(entry);
     this.#emit(entry.patches);
+    return entry;
   }
 
   /** Replaces the whole state (e.g. opening a project) and clears undo/redo. */

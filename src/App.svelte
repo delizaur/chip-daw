@@ -25,12 +25,6 @@
     () =>
       session.keyboardPiano ? false : action();
 
-  /** Arrows: nudge selected notes in the piano roll; else, with the piano off, select clips. */
-  const arrow =
-    (nudge: () => boolean, direction: 'left' | 'right' | 'up' | 'down'): KeyHandler =>
-    () =>
-      nudge() || (!session.keyboardPiano && session.selectAdjacentClip(direction));
-
   /** Enter opens the selected clip, unless a button or link has focus (Enter presses it). */
   const enter: KeyHandler = (event) => {
     const target = event.target;
@@ -64,14 +58,15 @@
       'mod+i': () => session.insertBars(),
       'mod+delete': () => session.deleteBars(),
       'mod+backspace': () => session.deleteBars(),
-      // Piano roll: transpose / move selected notes. With the keyboard piano off, otherwise
-      // select the neighbouring clip. Unhandled otherwise (keeps scrolling).
-      arrowup: arrow(() => session.nudgeNotes(1, 0), 'up'),
-      arrowdown: arrow(() => session.nudgeNotes(-1, 0), 'down'),
+      // Piano roll: transpose / move selected notes. Otherwise up/down select the track
+      // above/below and left/right move the playhead a bar (each selecting the clip under the
+      // playhead). Arrows don't play notes, so they work with the keyboard piano on too.
+      arrowup: () => session.nudgeNotes(1, 0) || session.stepTrack(-1),
+      arrowdown: () => session.nudgeNotes(-1, 0) || session.stepTrack(1),
       'shift+arrowup': () => session.nudgeNotes(12, 0),
       'shift+arrowdown': () => session.nudgeNotes(-12, 0),
-      arrowleft: arrow(() => session.nudgeNotes(0, -1), 'left'),
-      arrowright: arrow(() => session.nudgeNotes(0, 1), 'right'),
+      arrowleft: () => session.nudgeNotes(0, -1) || session.stepBar(-1),
+      arrowright: () => session.nudgeNotes(0, 1) || session.stepBar(1),
       // The key left of 1 turns the computer keyboard piano on and off.
       backquote: () => session.toggleKeyboardPiano(),
       // With the keyboard piano off, letter keys are shortcuts.

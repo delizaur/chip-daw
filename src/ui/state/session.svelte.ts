@@ -53,7 +53,7 @@ import type { RenderReply, RenderRequest } from '../../audio/render.worker';
 import { buildCurves, type AutomationCurve } from '../../engine/automation';
 import { COUNT_IN_BEATS } from '../../engine/engine';
 import { songEndTick } from '../../engine/offline-render';
-import { adjacentClip, clipEdgeJump, closestClip, type Direction } from '../arrangement/navigation';
+import { clipEdgeJump } from '../arrangement/navigation';
 import { MAX_OCTAVE, MIN_OCTAVE, shiftVelocity } from '../input/computer-keyboard';
 
 export type AudioStatus = 'off' | 'starting' | 'running' | 'error';
@@ -115,6 +115,12 @@ export interface Notice {
 /** How long auditioned notes (piano roll) sound. */
 const PREVIEW_MS = 220;
 const NOTICE_MS = 5000;
+
+/** What the session keeps with an undo step. */
+interface UndoMeta {
+  /** Where undoing the step puts the playhead (a recording: where it started). */
+  playhead?: Tick;
+}
 
 /**
  * App-wide state: the project (through its undo history), the audio engine, live input,
@@ -320,7 +326,9 @@ class Session {
         this.liveMoves = [];
         const { take } = message;
         if (take.notes.length > 0 || (take.params?.length ?? 0) > 0) {
-          this.run(recordTake(take, this.overdub));
+          // Undoing the take also puts the playhead back where recording started.
+          const meta: UndoMeta = { playhead: take.startTick };
+          this.run({ ...recordTake(take, this.overdub), meta });
         }
       }
     });
@@ -416,7 +424,8 @@ class Session {
   }
 
   undo(): void {
-    this.#history.undo();
+    const playhead = (this.#history.undo()?.meta as UndoMeta | undefined)?.playhead;
+    if (playhead !== undefined) this.seek(playhead);
   }
 
   redo(): void {
@@ -699,21 +708,6 @@ class Session {
   }
 
   /**
-   * Arrow keys: select the neighbouring clip of the selected one, or with none selected the
-   * clip closest to the playhead. Returns false when there's nowhere to go.
-   */
-  selectAdjacentClip(direction: Direction): boolean {
-    const tracks = this.project.tracks;
-    const anchor = this.#anchorClip();
-    const target = anchor
-      ? adjacentClip(tracks, anchor, direction)
-      : closestClip(tracks, this.selectedTrackIndex, this.position);
-    if (!target) return false;
-    this.#selectClipAt(target.trackIndex, target.clipId);
-    return true;
-  }
-
-  /**
    * A (-1) / D (+1): moves the playhead to the previous/next clip edge on the selected track,
    * selecting that clip (so pressing again walks from clip to clip).
    */
@@ -725,6 +719,45 @@ class Session {
     if (!jump) return;
     this.seek(jump.tick);
     this.#selectClipAt(this.selectedTrackIndex, jump.clipId);
+  }
+
+  /**
+   * Left/right arrows: moves the playhead to the previous/next bar line and selects the clip
+   * under it on the selected track (none if it lands on empty space).
+   */
+  stepBar(direction: 1 | -1): void {
+    const tempoMap = this.project.tempoMap;
+    const bar = barAt(tempoMap, this.position);
+    const tick =
+      direction > 0
+        ? bar.start + bar.length
+        : this.position > bar.start
+          ? bar.start
+          : bar.start > 0
+            ? barAt(tempoMap, bar.start - 1).start
+            : 0;
+    this.seek(tick);
+    this.#selectClipUnderPlayhead();
+  }
+
+  /**
+   * Up/down arrows: selects the track above (-1) / below (+1), empty or not, and the clip
+   * under the playhead on it (none if there isn't one).
+   */
+  stepTrack(direction: 1 | -1): void {
+    const index = this.selectedTrackIndex + direction;
+    if (index < 0 || index >= this.project.tracks.length) return;
+    this.selectTrack(index);
+    this.#selectClipUnderPlayhead();
+  }
+
+  #selectClipUnderPlayhead(): void {
+    const tick = this.position;
+    const clip = this.selectedTrack?.clips.find(
+      (c) => tick >= c.startTick && tick < c.startTick + c.lengthTicks,
+    );
+    this.selectClips(clip ? [clip.id] : []);
+    this.focusArea = 'arrangement';
   }
 
   /** Enter: opens the selected clip in the piano roll. */

@@ -44,8 +44,8 @@ Used by 2 clips" and highlights the clips and track headers an edit would change
 double-clicks create a clip and open it in the piano roll, where drawing,
 moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
 and the notes play back; the key left of 1 turns the keyboard piano off (letters then play
-nothing), R/O/M toggle record/overdub/metronome, arrows select the closest/next/previous/lower/upper
-clip, A/D walk the playhead along clip edges (selecting the clip at a shared edge), Enter opens the
+nothing), R/O/M toggle record/overdub/metronome, ←/→ move the playhead a bar and ↑/↓ select the track below/above (each selecting the clip
+under the playhead; the arrows also work with the piano on), A/D walk the playhead along clip edges (selecting the clip at a shared edge), Enter opens the
 piano roll, U/P/T run the clip preset buttons (T explains when there's nothing to load), and the
 key turns the piano back on; the Loop button shows the default four-bar loop, dragging its end marker
 makes a two-bar loop (one undo step) and playback jumps back into it; Export → New → Import round-trips the project and names it after the
@@ -91,7 +91,8 @@ EOF
 | `text <css…>` | innerText of the first match, e.g. `text .keys` (keyboard octave/velocity) |
 | `click-at <css> <x> <y> [shift\|alt]` | click at a point relative to an element, e.g. `click-at .timeline-canvas 112 10` (ruler, bar 2) |
 | `dblclick-at <css> <x> <y>` | double-click at a point (empty lane: creates a one-bar clip) |
-| `drag-at <css> <x1> <y1> <x2> <y2>` | pointer drag between element-relative points (move/resize clips) |
+| `drag-at <css> <x1> <y1> <x2> <y2> [shift\|alt\|middle]` | pointer drag between element-relative points (move/resize clips; from empty lane space: marquee selection; `middle`: pan the timeline) |
+| `wheel-at <css> <x> <y> <dx> <dy> [ctrl]` | mouse wheel over a point (the timeline scrolls sideways on either axis; `ctrl` zooms) |
 | `meter-max <ms>` | highest meter level while polling for `<ms>`; use it to check playback without timing guesses |
 | `drag <role> <name…> <dx> <dy>` | pointer drag from the element's center; knobs: negative dy = up = increase |
 | `attr <attribute> <role> <name…>` | print an attribute, e.g. `attr aria-valuetext slider Master` |

@@ -12,9 +12,11 @@
     clip            click to select (Shift: add/remove), drag to move (also to other tracks),
                     drag an edge to resize, double-click to open it in the piano roll;
                     Alt while dragging disables snapping
-    empty lane      click to select the track (and place the playhead when stopped),
-                    double-click to create an empty one-bar clip
-    wheel           Shift+wheel or horizontal wheel scrolls, Ctrl/Cmd+wheel zooms
+    empty lane      click to select the track and deselect clips (and place the playhead when
+                    stopped), drag to select the clips in a rectangle (Shift: add to the
+                    selection), double-click to create an empty one-bar clip
+    wheel           scrolls sideways (the scrollbar scrolls the tracks), Ctrl/Cmd+wheel zooms
+    middle button   drag to scroll sideways
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -63,6 +65,8 @@
   });
   let view = $state<TimelineView>({ pixelsPerTick: DEFAULT_PIXELS_PER_TICK, scrollTick: 0 });
   let ghosts = $state.raw<ClipGhost[] | null>(null);
+  /** The rubber-band rectangle while dragging over empty space (canvas pixels). */
+  let marquee = $state<{ left: number; top: number; width: number; height: number } | null>(null);
   /** Bumped when something outside Svelte's knowledge (the theme) changes the drawing. */
   let themeVersion = $state(0);
 
@@ -109,6 +113,15 @@
         began: boolean;
       }
     | { kind: 'loop'; edge: 'start' | 'end' }
+    | { kind: 'pan'; startX: number; startScroll: Tick }
+    | {
+        kind: 'marquee';
+        startX: number;
+        startY: number;
+        /** Selected before the drag (kept with Shift). */
+        base: string[];
+        started: boolean;
+      }
     | {
         kind: 'move';
         ids: ReadonlySet<string>;
@@ -289,25 +302,44 @@
     void document.fonts?.ready.then(() => themeVersion++);
   });
 
-  // Wheel: needs a non-passive listener to stop the page from scrolling/zooming.
+  // Wheel (over the headers too): scrolls sideways, never the tracks (that's the scrollbar).
+  // Needs a non-passive listener to stop the page from scrolling/zooming.
   $effect(() => {
-    const element = canvas;
+    const element = scroller;
     if (!element) return;
     const onWheel = (event: WheelEvent) => {
-      const { x } = point(event);
+      event.preventDefault();
+      // Lines or pages (some mice) to pixels.
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? width : 1;
       if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        view = zoomAround(view, Math.exp(-event.deltaY * 0.002), x);
+        const x = Math.max(0, point(event).x);
+        view = zoomAround(view, Math.exp(-event.deltaY * unit * 0.002), x);
         return;
       }
-      const dx = event.shiftKey ? event.deltaY : event.deltaX;
+      const dx = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
       if (dx !== 0) {
-        event.preventDefault();
-        view = { ...view, scrollTick: Math.max(0, view.scrollTick + dx / view.pixelsPerTick) };
+        const scrollTick = view.scrollTick + (dx * unit) / view.pixelsPerTick;
+        view = { ...view, scrollTick: Math.max(0, scrollTick) };
       }
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
+  });
+
+  // The middle button pans: stop the browser's autoscroll (on mousedown, which pointerdown
+  // can't) and middle-click paste.
+  $effect(() => {
+    const element = canvas;
+    if (!element) return;
+    const stop = (event: MouseEvent) => {
+      if (event.button === 1) event.preventDefault();
+    };
+    element.addEventListener('mousedown', stop);
+    element.addEventListener('auxclick', stop);
+    return () => {
+      element.removeEventListener('mousedown', stop);
+      element.removeEventListener('auxclick', stop);
+    };
   });
 
   function zoom(factor: number) {
@@ -358,8 +390,31 @@
     };
   }
 
+  /** The clips touching a rectangle of the timeline (canvas pixels). */
+  function clipsInRect(x1: number, y1: number, x2: number, y2: number): string[] {
+    const startTick = xToTick(view, Math.min(x1, x2));
+    const endTick = xToTick(view, Math.max(x1, x2));
+    const firstLane = Math.max(0, laneAt(Math.min(y1, y2), top));
+    const lastLane = laneAt(Math.max(y1, y2), top);
+    return tracks.flatMap((track, lane) =>
+      lane < firstLane || lane > lastLane
+        ? []
+        : track.clips
+            .filter((c) => c.startTick < endTick && c.startTick + c.lengthTicks > startTick)
+            .map((c) => c.id),
+    );
+  }
+
   function onpointerdown(event: PointerEvent) {
-    if (event.button !== 0 || !canvas) return;
+    if (!canvas) return;
+    if (event.button === 1) {
+      event.preventDefault();
+      canvas.setPointerCapture(event.pointerId);
+      canvas.style.cursor = 'grabbing';
+      drag = { kind: 'pan', startX: point(event).x, startScroll: view.scrollTick };
+      return;
+    }
+    if (event.button !== 0) return;
     session.focusArea = 'arrangement';
     const { x, y } = point(event);
     const hit = hitTest(tracks, view, x, y, top);
@@ -415,8 +470,10 @@
           };
     } else if (hit.kind === 'lane') {
       session.selectTrack(hit.trackIndex);
-      if (!event.shiftKey) session.selectClips([]);
+      const base = event.shiftKey ? [...session.selectedClipIds] : [];
+      session.selectClips(base);
       if (!session.playing) session.seek(snap(hit.tick, event));
+      drag = { kind: 'marquee', startX: x, startY: y, base, started: false };
     }
   }
 
@@ -448,7 +505,23 @@
       return;
     }
 
-    if (drag.kind === 'seek') {
+    if (drag.kind === 'pan') {
+      const scrollTick = drag.startScroll - (x - drag.startX) / view.pixelsPerTick;
+      view = { ...view, scrollTick: Math.max(0, scrollTick) };
+    } else if (drag.kind === 'marquee') {
+      if (!drag.started && Math.hypot(x - drag.startX, y - drag.startY) < 4) return;
+      drag.started = true;
+      // Kept within the track lanes.
+      const cy = Math.min(height - 1, Math.max(top, y));
+      marquee = {
+        left: Math.min(drag.startX, x),
+        top: Math.min(drag.startY, cy),
+        width: Math.abs(x - drag.startX),
+        height: Math.abs(cy - drag.startY),
+      };
+      const inside = clipsInRect(drag.startX, drag.startY, x, cy);
+      session.selectClips([...new Set([...drag.base, ...inside])]);
+    } else if (drag.kind === 'seek') {
       session.seek(snap(xToTick(view, x), event));
     } else if (drag.kind === 'barSelect') {
       const anchor = barAt(tempoMap, drag.anchor);
@@ -529,6 +602,7 @@
     const finished = drag;
     drag = null;
     ghosts = null;
+    marquee = null;
     if (canvas) canvas.style.cursor = '';
     if (finished?.kind === 'loop') {
       session.commit();
@@ -659,7 +733,11 @@
           style:--color={trackColor(i)}
           aria-label="Select {track.name}"
           aria-pressed={session.selectedTrackIndex === i}
-          onclick={() => session.selectTrack(i)}
+          onclick={() => {
+            session.selectTrack(i);
+            session.selectClips([]);
+            session.focusArea = 'arrangement';
+          }}
         >
           <span class="number">{i + 1}</span>
           <span class="text">
@@ -681,6 +759,15 @@
         onpointercancel={onpointerup}
         {ondblclick}
       ></canvas>
+      {#if marquee}
+        <div
+          class="marquee"
+          style:left="{marquee.left}px"
+          style:top="{marquee.top}px"
+          style:width="{marquee.width}px"
+          style:height="{marquee.height}px"
+        ></div>
+      {/if}
       {#if meterEdit}
         <form
           class="meter-edit"
@@ -989,6 +1076,13 @@
     .count-in span {
       animation: none;
     }
+  }
+
+  .marquee {
+    position: absolute;
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    pointer-events: none;
   }
 
   .timeline-canvas {

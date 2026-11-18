@@ -49,6 +49,16 @@ describe('History', () => {
     expect(h.canRedo).toBe(false);
   });
 
+  it("hands back an undone or redone step with its command's meta", () => {
+    const h = new History(initial());
+    h.run({ ...setVolume(0.7), meta: { playhead: 960 } });
+    h.run(setName('b'));
+    expect(h.undo()?.meta).toBeUndefined();
+    expect(h.undo()).toMatchObject({ label: 'Volume', meta: { playhead: 960 } });
+    expect(h.undo()).toBeUndefined();
+    expect(h.redo()?.meta).toEqual({ playhead: 960 });
+  });
+
   it('keeps state immutable', () => {
     const h = new History(initial());
     const before = h.state;

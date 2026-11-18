@@ -126,25 +126,36 @@ function createCommands(page, url, errors) {
       await page.mouse.dblclick(box.x + Number(x), box.y + Number(y));
     },
     /**
-     * drag-at <css> <x1> <y1> <x2> <y2> [shift|alt]: pointer drag between element-relative
-     * points, optionally holding a modifier (Shift-drag the ruler to select bars).
+     * drag-at <css> <x1> <y1> <x2> <y2> [shift|alt|middle]: pointer drag between
+     * element-relative points, optionally holding a modifier (Shift-drag the ruler to select
+     * bars) or with the middle button.
      */
     async 'drag-at'([selector, x1, y1, x2, y2, modifier]) {
       const box = await page.locator(selector).first().boundingBox();
       const from = { x: box.x + Number(x1), y: box.y + Number(y1) };
       const to = { x: box.x + Number(x2), y: box.y + Number(y2) };
       const key = modifier ? { shift: 'Shift', alt: 'Alt' }[modifier] : undefined;
+      const button = modifier === 'middle' ? 'middle' : 'left';
       if (key) await page.keyboard.down(key);
       await page.mouse.move(from.x, from.y);
-      await page.mouse.down();
+      await page.mouse.down({ button });
       for (let i = 1; i <= 10; i++) {
         await page.mouse.move(
           from.x + ((to.x - from.x) * i) / 10,
           from.y + ((to.y - from.y) * i) / 10,
         );
       }
-      await page.mouse.up();
+      await page.mouse.up({ button });
       if (key) await page.keyboard.up(key);
+    },
+    /** wheel-at <css> <x> <y> <dx> <dy> [ctrl]: turns the mouse wheel over a point. */
+    async 'wheel-at'([selector, x, y, dx, dy, modifier]) {
+      const box = await page.locator(selector).first().boundingBox();
+      await page.mouse.move(box.x + Number(x), box.y + Number(y));
+      if (modifier === 'ctrl') await page.keyboard.down('Control');
+      await page.mouse.wheel(Number(dx), Number(dy));
+      if (modifier === 'ctrl') await page.keyboard.up('Control');
+      await page.waitForTimeout(100);
     },
     /**
      * drag <role> <name...> <dx> <dy>: pointer drag starting at the element's center.
@@ -684,20 +695,37 @@ async function smoke(c) {
   }
   await c.press(['Escape']);
   await c.press(['4']);
-  await c.press(['ArrowRight']);
-  check((await selection()) === '3:3840', 'an arrow selects the clip closest to the playhead');
-  await c.press(['ArrowRight']);
-  const second = await selection();
-  check(/^3:\d+$/.test(second) && second !== '3:3840', `→ selects the next clip (${second})`);
-  await c.press(['ArrowLeft']);
-  check((await selection()) === '3:3840', '← selects the previous clip');
-  await c.press(['ArrowDown']);
-  check((await selection()) === '5:0', '↓ selects the nearest clip on a lower track');
-  await c.press(['ArrowUp']);
-  check((await selection()) === '3:3840', '↑ goes back up');
-
   const pos = () => state('chipDaw.session.position');
-  const secondStart = Number(second.split(':')[1]);
+  await c.press(['ArrowRight']);
+  check(
+    (await pos()) === 3840 && (await selection()) === '3:3840',
+    '→ moves the playhead a bar and selects the clip under it',
+  );
+  await c.press(['ArrowRight']);
+  check((await pos()) === 7680, '→ again moves another bar');
+  await c.press(['ArrowLeft']);
+  check((await pos()) === 3840 && (await selection()) === '3:3840', '← moves back a bar');
+  const trackIndex = () => state('chipDaw.session.selectedTrackIndex');
+  await c.press(['ArrowDown']);
+  check(
+    (await trackIndex()) === 4 && (await selection()) === '',
+    '↓ selects the track below, even an empty one',
+  );
+  await c.press(['ArrowUp']);
+  check(
+    (await trackIndex()) === 3 && (await selection()) === '3:3840',
+    '↑ goes back up and selects the clip under the playhead',
+  );
+  await c.press(['ArrowLeft']);
+  check(
+    (await pos()) === 0 && (await selection()) === '',
+    '← onto empty space (bar 1) deselects the clips',
+  );
+
+  const secondStart = await state(
+    'chipDaw.session.project.tracks[3].clips.map(c => c.startTick).sort((a, b) => a - b)[1]',
+  );
+  const second = `3:${secondStart}`;
   await c.press(['Home']);
   await c.press(['d']);
   check((await pos()) === 3840, 'D jumps to the start of the next clip');
@@ -744,7 +772,8 @@ async function smoke(c) {
     (await c.text(['.notice'])).includes('already the Track 4 preset'),
     'T explains when there is nothing to load',
   );
-  await c.press(['ArrowRight']);
+  // The second clip on track 4 (its first bar).
+  await c['click-at'](['.timeline-canvas', String((secondStart / 3840) * 112 + 8), '276']);
   await c.press(['t']);
   cp = await state(
     '(() => { const t = chipDaw.session.project.tracks[3]; return t.presetId === t.clips[1].presetId; })()',
