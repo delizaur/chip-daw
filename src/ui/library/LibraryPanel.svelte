@@ -1,7 +1,7 @@
 <!--
   Left sidebar: the preset library. Folders open and close; double-click a preset (or select
   it and press "Load") to put a copy on the selected track. Actions for the selected folder or
-  preset are in the toolbar at the bottom.
+  preset are in the toolbar at the bottom. I browses it from the keyboard (see App.svelte).
 -->
 <script lang="ts">
   import { findPreset, presetsIn, sortedFolders } from '../../model/library';
@@ -22,6 +22,15 @@
       ? library.folders.find((f) => f.id === store.selection!.id)
       : undefined,
   );
+
+  let tree: HTMLDivElement | undefined = $state();
+
+  // While browsing with the keyboard, keep the selected row in view.
+  $effect(() => {
+    void store.selection;
+    void store.expanded;
+    if (store.browsing) tree?.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest' });
+  });
 
   /** Focuses and selects an input when it appears (inline rename). */
   function focusSelect(input: HTMLInputElement) {
@@ -67,7 +76,7 @@
   </div>
 {/snippet}
 
-<aside class="library" aria-label="Preset library">
+<aside class="library" class:browsing={store.browsing} aria-label="Preset library">
   <header>
     <h2 class="panel-title">Presets</h2>
     <div class="tools">
@@ -92,7 +101,16 @@
     Save Track {trackNumber} preset
   </button>
 
-  <div class="tree" aria-label="Presets">
+  {#if store.browsing}
+    <p class="browse-hint" role="status">
+      <span><kbd>↑</kbd><kbd>↓</kbd> select</span>
+      <span><kbd>←</kbd><kbd>→</kbd> folders</span>
+      <span><kbd>Enter</kbd> open / load</span>
+      <span><kbd>I</kbd> done</span>
+    </p>
+  {/if}
+
+  <div class="tree" aria-label="Presets" bind:this={tree}>
     {#each folders as folder (folder.id)}
       {@const open = store.expanded.has(folder.id)}
       <div
@@ -274,6 +292,37 @@
 
   .row.selected {
     background: var(--panel-sunken);
+  }
+
+  /* Keyboard browsing (I): the panel is framed and the selected row marked in the accent. */
+  .library.browsing {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  .browsing .row.selected {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .browse-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    margin: 0;
+    padding: 0 var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--ink-dim);
+  }
+
+  .browse-hint kbd {
+    display: inline-block;
+    min-width: 16px;
+    margin-right: 2px;
+    padding: 0 3px;
+    border: 1px solid var(--line-strong);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-align: center;
+    color: var(--ink);
   }
 
   .row.nested {

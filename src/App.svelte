@@ -6,6 +6,8 @@
   import BottomPanel from './ui/editor/BottomPanel.svelte';
   import { installComputerKeyboard } from './ui/input/computer-keyboard';
   import { installKeymap, type KeyHandler } from './ui/keymap';
+  import { setTrackMute, setTrackSolo } from './model/commands';
+  import { libraryStore } from './ui/state/library.svelte';
   import { BOTTOM_MIN_HEIGHT, session } from './ui/state/session.svelte';
 
   let windowHeight = $state(0);
@@ -25,6 +27,53 @@
     () =>
       session.keyboardPiano ? false : action();
 
+  /**
+   * While browsing the library (I), these keys move through it instead of doing `normal`.
+   */
+  const orBrowse =
+    (action: Parameters<typeof libraryStore.browse>[0], normal: KeyHandler): KeyHandler =>
+    (event) => {
+      if (!libraryStore.browsing) return normal(event);
+      if (!event.repeat || action !== 'enter') libraryStore.browse(action);
+    };
+
+  /**
+   * M / S held: a number key mutes / solos that track; released without one, the selected
+   * track. Only with the keyboard piano off (S plays a note otherwise).
+   */
+  let held: { kind: 'mute' | 'solo'; used: boolean } | null = null;
+
+  function toggleTrack(kind: 'mute' | 'solo', index: number) {
+    const track = session.project.tracks[index];
+    if (!track) return;
+    session.run(
+      kind === 'mute' ? setTrackMute(track.id, !track.mute) : setTrackSolo(track.id, !track.solo),
+    );
+  }
+
+  const hold =
+    (kind: 'mute' | 'solo'): KeyHandler =>
+    (event) => {
+      if (session.keyboardPiano) return false;
+      if (!event.repeat || !held) held = { kind, used: false };
+    };
+
+  $effect(() => {
+    const onKeyUp = (event: KeyboardEvent) => {
+      const kind = { KeyM: 'mute', KeyS: 'solo' }[event.code];
+      if (!held || held.kind !== kind) return;
+      if (!held.used) toggleTrack(held.kind, session.selectedTrackIndex);
+      held = null;
+    };
+    const forget = () => (held = null);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', forget);
+    return () => {
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', forget);
+    };
+  });
+
   /** Enter opens the selected clip, unless a button or link has focus (Enter presses it). */
   const enter: KeyHandler = (event) => {
     const target = event.target;
@@ -43,7 +92,8 @@
       'mod+y': () => session.redo(),
       escape: () => {
         session.allNotesOff();
-        session.clearSelection();
+        if (libraryStore.browsing) libraryStore.browsing = false;
+        else session.clearSelection();
       },
       space: () => session.togglePlay(),
       home: () => session.seek(0),
@@ -61,22 +111,33 @@
       // Piano roll: transpose / move selected notes. Otherwise up/down select the track
       // above/below and left/right move the playhead a bar (each selecting the clip under the
       // playhead). Arrows don't play notes, so they work with the keyboard piano on too.
-      arrowup: () => session.nudgeNotes(1, 0) || session.stepTrack(-1),
-      arrowdown: () => session.nudgeNotes(-1, 0) || session.stepTrack(1),
+      arrowup: orBrowse('up', () => session.nudgeNotes(1, 0) || session.stepTrack(-1)),
+      arrowdown: orBrowse('down', () => session.nudgeNotes(-1, 0) || session.stepTrack(1)),
       'shift+arrowup': () => session.nudgeNotes(12, 0),
       'shift+arrowdown': () => session.nudgeNotes(-12, 0),
-      arrowleft: () => session.nudgeNotes(0, -1) || session.stepBar(-1),
-      arrowright: () => session.nudgeNotes(0, 1) || session.stepBar(1),
+      arrowleft: orBrowse('left', () => session.nudgeNotes(0, -1) || session.stepBar(-1)),
+      arrowright: orBrowse('right', () => session.nudgeNotes(0, 1) || session.stepBar(1)),
       // The key left of 1 turns the computer keyboard piano on and off.
       backquote: () => session.toggleKeyboardPiano(),
       // With the keyboard piano off, letter keys are shortcuts.
       r: whenPianoOff(() => session.toggleRecord()),
       o: whenPianoOff(() => session.toggleOverdub()),
-      m: whenPianoOff(() => session.toggleMetronome()),
+      c: whenPianoOff(() => session.toggleMetronome()),
+      m: hold('mute'),
       l: whenPianoOff(() => session.toggleLoop()),
-      a: whenPianoOff(() => session.jumpToClipEdge(-1)),
-      d: whenPianoOff(() => session.jumpToClipEdge(1)),
-      enter,
+      a: orBrowse(
+        'left',
+        whenPianoOff(() => session.jumpToClipEdge(-1)),
+      ),
+      d: orBrowse(
+        'right',
+        whenPianoOff(() => session.jumpToClipEdge(1)),
+      ),
+      w: orBrowse('up', () => false),
+      s: orBrowse('down', hold('solo')),
+      enter: orBrowse('enter', enter),
+      // I (for instrument) turns library browsing on and off; I isn't a piano key.
+      i: () => libraryStore.toggleBrowsing(),
       u: whenPianoOff(() => session.clipPresetShortcut('unique')),
       p: whenPianoOff(() => session.clipPresetShortcut('useTrack')),
       t: whenPianoOff(() => session.clipPresetShortcut('loadToTrack')),
@@ -84,14 +145,21 @@
       'mod+s': () => void session.exportProject(),
       'mod+o': () => void session.importProject(),
     };
-    for (let i = 0; i < 9; i++) bindings[`digit${i + 1}`] = () => session.selectTrack(i);
+    // Number keys select a track, or with M / S held mute / solo it.
+    for (let i = 0; i < 9; i++) {
+      bindings[`digit${i + 1}`] = () => {
+        if (!held) return session.selectTrack(i);
+        held.used = true;
+        toggleTrack(held.kind, i);
+      };
+    }
     return installKeymap(bindings);
   });
 
   // The computer keyboard plays notes on the selected track.
   $effect(() =>
     installComputerKeyboard({
-      enabled: () => session.keyboardPiano,
+      enabled: () => session.keyboardPiano && !libraryStore.browsing,
       octave: () => session.keyboardOctave,
       noteOn: (pitch) => session.noteOn('keyboard', pitch, session.keyboardVelocity),
       noteOff: (pitch) => session.noteOff('keyboard', pitch),

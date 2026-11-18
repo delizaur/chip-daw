@@ -678,11 +678,11 @@ async function smoke(c) {
     (await c.attr(['aria-pressed', 'button', 'Computer', 'keyboard', 'piano'])) === 'false',
     'the key left of 1 turns the keyboard piano off',
   );
-  await c.keydown(['KeyS']);
+  await c.keydown(['KeyF']);
   check((await c.meter()) === 0, 'with the piano off, letter keys play nothing');
-  await c.keyup(['KeyS']);
+  await c.keyup(['KeyF']);
   for (const [key, name] of [
-    ['m', 'Metronome'],
+    ['c', 'Metronome'],
     ['o', 'Overdub'],
     ['r', 'Record'],
     ['l', 'Loop'],
@@ -693,6 +693,42 @@ async function smoke(c) {
     const off = await c.attr(['aria-pressed', 'button', name]);
     check(on === 'true' && off === 'false', `${key.toUpperCase()} toggles ${name}`);
   }
+  // M / S: released alone they mute / solo the selected track; held with a number, that track.
+  const flags = () =>
+    state(
+      'chipDaw.session.project.tracks.map(t => (t.mute ? "M" : "-") + (t.solo ? "S" : "-")).join(" ").trim()',
+    );
+  await c.press(['1']);
+  const flagsBefore = await flags();
+  await c.press(['m']);
+  check((await flags()).startsWith('M-'), 'M mutes the selected track');
+  await c.press(['m']);
+  await c.keydown(['KeyM']);
+  await c.press(['3']);
+  await c.keyup(['KeyM']);
+  const muted = (await flags()).split(' ');
+  check(
+    muted[0] === '--' &&
+      muted[2] === 'M-' &&
+      (await state('chipDaw.session.selectedTrackIndex')) === 0,
+    'M + 3 mutes track 3 (not the selected one, and keeps the selection)',
+  );
+  await c.keydown(['KeyS']);
+  await c.press(['3']);
+  await c.keyup(['KeyS']);
+  await c.press(['s']);
+  const soloed = (await flags()).split(' ');
+  check(soloed[0] === '-S' && soloed[2] === 'MS', 'S solos the selected track, S + 3 track 3');
+  for (const key of ['s', 'KeyM', 'KeyS']) {
+    if (key === 's') await c.press(['s']);
+    else {
+      await c.keydown([key]);
+      await c.press(['3']);
+      await c.keyup([key]);
+    }
+  }
+  check((await flags()) === flagsBefore, `pressing them again undoes it (${await flags()})`);
+
   await c.press(['Escape']);
   await c.press(['4']);
   const pos = () => state('chipDaw.session.position');
@@ -900,6 +936,52 @@ async function smoke(c) {
   await c.click(['button', 'Triangle', 'bass']);
   await c.click(['button', 'Load', 'to', 'Track', '1']);
   check((await trackPreset()) === 'Triangle bass', 'a library preset loads onto the track');
+  // I browses the library from the keyboard (Bass is the first folder; its first preset is
+  // Triangle bass's neighbour or itself, so load whatever's selected and compare).
+  await c['click-at'](['.timeline-canvas', '2', '10']);
+  await c.press(['i']);
+  const librarySelection = () => state('JSON.stringify(chipDaw.library.selection)');
+  const folders = await state(
+    '[...chipDaw.library.library.folders].sort((a, b) => a.name.localeCompare(b.name)).map(f => f.id)',
+  );
+  await c.press(['ArrowLeft']);
+  await c.press(['ArrowLeft']);
+  await c.press(['ArrowLeft']);
+  check(
+    (await librarySelection()) === JSON.stringify({ kind: 'folder', id: folders[0] }),
+    'I browses the library; ← skips back to the first folder',
+  );
+  await c.press(['d']);
+  check(
+    (await librarySelection()) === JSON.stringify({ kind: 'folder', id: folders[1] }),
+    'D skips to the next folder',
+  );
+  await c.press(['a']);
+  const wasOpen = await state(`chipDaw.library.expanded.has(${JSON.stringify(folders[0])})`);
+  await c.press(['Enter']);
+  check(
+    (await state(`chipDaw.library.expanded.has(${JSON.stringify(folders[0])})`)) === !wasOpen,
+    'Enter on a folder opens / closes it',
+  );
+  if (wasOpen) await c.press(['Enter']); // open it again
+  await c.press(['s']);
+  await c.press(['ArrowDown']);
+  await c.press(['w']);
+  const pick = JSON.parse(await librarySelection());
+  const pickName = await state(
+    `chipDaw.library.library.presets.find(p => p.preset.id === ${JSON.stringify(pick.id)}).preset.name`,
+  );
+  await c.keydown(['KeyF']);
+  check((await c.meter()) === 0, 'while browsing, the keyboard piano is paused');
+  await c.keyup(['KeyF']);
+  await c.press(['Enter']);
+  check(
+    pick.kind === 'preset' && (await trackPreset()) === pickName,
+    `S / ↓ / W select presets; Enter loads one onto the track (${pickName})`,
+  );
+  await c.press(['i']);
+  check((await state('chipDaw.library.browsing')) === false, 'I again stops browsing');
+  await c.press(['Control+z']); // back to Triangle bass for the checks below
   check((await undoTitle()).startsWith('Undo Load Triangle bass'), 'loading a preset is undoable');
   await c.click(['button', 'Save', 'Track', '1', 'preset']);
   const libraryNames = async () =>

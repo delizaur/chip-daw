@@ -23,6 +23,7 @@ import {
 import type { Preset } from '../../model/types';
 import { openTextFile, PRESET_FILE, saveFile } from '../../persistence/files';
 import { readStored, writeStored } from '../../persistence/storage';
+import { libraryRows, stepFolder, stepRow } from '../library/navigation';
 import { session } from './session.svelte';
 
 const STORAGE_KEY = 'library';
@@ -43,6 +44,11 @@ class LibraryStore {
   expanded = $state.raw<ReadonlySet<string>>(new Set());
   /** Id of the folder or preset being renamed inline. */
   renaming = $state<string | null>(null);
+  /**
+   * Keyboard browsing (I turns it on and off): arrows and W/A/S/D move the selection, Enter
+   * opens a folder or loads a preset. The keyboard piano is paused meanwhile.
+   */
+  browsing = $state(false);
   /** False when the stored library couldn't be read: never overwrite it then. */
   #canSave = true;
 
@@ -97,6 +103,27 @@ class LibraryStore {
     this.expanded = new Set(
       open.includes(folderId) ? open.filter((id) => id !== folderId) : [...open, folderId],
     );
+  }
+
+  toggleBrowsing(): void {
+    this.browsing = !this.browsing;
+    if (this.browsing && !this.selection) this.browse('down');
+  }
+
+  /** A key while browsing: up/down a row, left/right a folder, Enter opens or loads. */
+  browse(action: 'up' | 'down' | 'left' | 'right' | 'enter'): void {
+    const current = this.selection;
+    if (action === 'enter') {
+      if (current?.kind === 'folder') this.toggleFolder(current.id);
+      else if (current?.kind === 'preset') this.loadToTrack(current.id);
+      return;
+    }
+    const rows = libraryRows(this.library, this.expanded);
+    const next =
+      action === 'up' || action === 'down'
+        ? stepRow(rows, current, action === 'down' ? 1 : -1)
+        : stepFolder(rows, current, action === 'right' ? 1 : -1);
+    if (next) this.select(next);
   }
 
   #reveal(folderId: string | null): void {

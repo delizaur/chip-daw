@@ -44,7 +44,7 @@ Used by 2 clips" and highlights the clips and track headers an edit would change
 double-clicks create a clip and open it in the piano roll, where drawing,
 moving, resizing, velocity, select-all + transpose, delete/undo and double-click-delete all work
 and the notes play back; the key left of 1 turns the keyboard piano off (letters then play
-nothing), R/O/M toggle record/overdub/metronome, ←/→ move the playhead a bar and ↑/↓ select the track below/above (each selecting the clip
+nothing), R/O/C toggle record/overdub/metronome, M/S (alone or held with a number) mute/solo tracks, I browses the library (arrows, W/A/S/D, Enter), ←/→ move the playhead a bar and ↑/↓ select the track below/above (each selecting the clip
 under the playhead; the arrows also work with the piano on), A/D walk the playhead along clip edges (selecting the clip at a shared edge), Enter opens the
 piano roll, U/P/T run the clip preset buttons (T explains when there's nothing to load), and the
 key turns the piano back on; the Loop button shows the default four-bar loop, dragging its end marker
@@ -99,7 +99,7 @@ EOF
 | `wait-text <text…>` | wait up to 10 s for text to appear |
 | `status` | audio status pill text (`Audio off · click to start` / `Audio on`) |
 | `meter` | master meter level, linear peak 0..1 (after 300 ms settle) |
-| `eval chipDaw.session…` | the app exposes `window.chipDaw = { session }`, e.g. `eval chipDaw.session.project.tracks[0].clips.length` |
+| `eval chipDaw.session…` | the app exposes `window.chipDaw = { session }`, e.g. `eval chipDaw.session.project.tracks[0].clips.length` (the library store is `chipDaw.library`) |
 | `eval <js…>` | evaluate JS in the page, print JSON |
 | `theme dark\|light` | set `<html data-theme>` (dark is the default; waits for transitions) |
 | `viewport <w> <h>` | resize |
