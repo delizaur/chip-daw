@@ -3,6 +3,7 @@ import type { BoxInstance } from '../types';
 import { ANALOG_SYNTH } from './analog-synth';
 import { CHIP_SYNTH } from './chip-synth';
 import { DRUM_SYNTH } from './drum-synth';
+import { FM4_SYNTH } from './fm4-synth';
 import { PLUCK_SYNTH } from './pluck-synth';
 import { ARPEGGIATOR, BITCRUSH, DELAY, FILTER, REVERB } from './effects';
 import { FM_SYNTH } from './fm-synth';
@@ -14,6 +15,7 @@ import type { BoxDescriptor, BoxKind, ParamDescriptor } from './types';
 const DESCRIPTORS: BoxDescriptor[] = [
   CHIP_SYNTH,
   FM_SYNTH,
+  FM4_SYNTH,
   WAVE_SYNTH,
   SID_SYNTH,
   ANALOG_SYNTH,

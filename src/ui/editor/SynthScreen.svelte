@@ -13,9 +13,16 @@
     /** Param id → the color of its knob. */
     colors: ReadonlyMap<string, string>;
     compact?: boolean;
+    /** The params of the envelope to draw (default: attack, decay, sustain, release). */
+    ids?: { attack: string; decay: string; sustain: string; release: string };
   }
 
-  let { box, colors, compact = false }: Props = $props();
+  let {
+    box,
+    colors,
+    compact = false,
+    ids = { attack: 'attack', decay: 'decay', sustain: 'sustain', release: 'release' },
+  }: Props = $props();
 
   /** The compact strip's width follows its container. */
   let stripWidth = $state(0);
@@ -23,7 +30,7 @@
   const H = $derived(compact ? 30 : 52);
 
   const wave = $derived(compact ? null : waveShape(box));
-  const envelope = $derived(envelopeShape(box));
+  const envelope = $derived(envelopeShape(box, ids));
   /**
    * A second envelope drawn dashed behind: FM's modulator envelope (brightness over the note),
    * the analog synth's filter envelope. Each has a fixed attack and shares the amp's release.
@@ -92,10 +99,10 @@
               ])}
             />
           {/if}
-          <path d={path(envelope.attack)} style:stroke={color('attack')} />
-          <path d={path(envelope.decay)} style:stroke={color('decay')} />
-          <path d={path(envelope.sustain)} style:stroke={color('sustain')} />
-          <path d={path(envelope.release)} style:stroke={color('release')} />
+          <path d={path(envelope.attack)} style:stroke={color(ids.attack)} />
+          <path d={path(envelope.decay)} style:stroke={color(ids.decay)} />
+          <path d={path(envelope.sustain)} style:stroke={color(ids.sustain)} />
+          <path d={path(envelope.release)} style:stroke={color(ids.release)} />
           {#each joints as joint, i (i)}
             <circle cx={joint.x} cy={joint.y} r="2.5" />
           {/each}

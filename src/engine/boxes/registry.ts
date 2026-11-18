@@ -1,6 +1,7 @@
 import { ANALOG_SYNTH } from '../../model/boxes/analog-synth';
 import { CHIP_SYNTH } from '../../model/boxes/chip-synth';
 import { DRUM_SYNTH } from '../../model/boxes/drum-synth';
+import { FM4_SYNTH } from '../../model/boxes/fm4-synth';
 import { PLUCK_SYNTH } from '../../model/boxes/pluck-synth';
 import { ARPEGGIATOR, BITCRUSH, DELAY, FILTER, REVERB } from '../../model/boxes/effects';
 import { FM_SYNTH } from '../../model/boxes/fm-synth';
@@ -14,6 +15,7 @@ import { AnalogSynth } from './analog-synth';
 import { Arpeggiator } from './arpeggiator';
 import { ChipSynth } from './chip-synth';
 import { DrumSynth } from './drum-synth';
+import { Fm4Synth } from './fm4-synth';
 import { PluckSynth } from './pluck-synth';
 import { FmSynth } from './fm-synth';
 import { SidSynth } from './sid-synth';
@@ -36,6 +38,7 @@ export const SYNTH_FACTORIES: Readonly<Record<string, SynthFactory>> = {
   [ANALOG_SYNTH.type]: (sampleRate) => new AnalogSynth(sampleRate),
   [DRUM_SYNTH.type]: (sampleRate) => new DrumSynth(sampleRate),
   [PLUCK_SYNTH.type]: (sampleRate) => new PluckSynth(sampleRate),
+  [FM4_SYNTH.type]: (sampleRate) => new Fm4Synth(sampleRate),
 };
 
 export const EFFECT_FACTORIES: Readonly<Record<string, EffectFactory>> = {

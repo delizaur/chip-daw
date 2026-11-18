@@ -16,6 +16,7 @@
   import Knob from '../controls/Knob.svelte';
   import Segmented from '../controls/Segmented.svelte';
   import { session } from '../state/session.svelte';
+  import AlgorithmScreen from './AlgorithmScreen.svelte';
   import EffectScreen from './EffectScreen.svelte';
   import KitScreen from './KitScreen.svelte';
   import NoteScreen from './NoteScreen.svelte';
@@ -55,7 +56,7 @@
     for (const param of descriptor?.params ?? []) {
       let section = result.find((s) => s.title === param.group);
       if (!section) result.push((section = { title: param.group, enums: [], knobs: [] }));
-      (param.steps ? section.enums : section.knobs).push(param);
+      (param.steps && param.control !== 'knob' ? section.enums : section.knobs).push(param);
     }
     return result;
   });
@@ -70,7 +71,8 @@
 
   /**
    * The envelope knobs have the same colors on every synth (attack blue, decay green, sustain
-   * pink, release orange), matching the stages on the synth screen; the rest cycle.
+   * pink, release orange), matching the stages on the synth screen; the rest cycle. Matched by
+   * the end of the id too (an operator's "op2Decay").
    */
   const ENVELOPE_COLORS: Record<string, string> = {
     attack: 'var(--c-blue)',
@@ -80,7 +82,26 @@
   };
   /** Knob `i` of its section: colors cycle within each section, like a bank of encoders. */
   const knobColor = (param: ParamDescriptor, i: number) =>
-    ENVELOPE_COLORS[param.id] ?? KNOB_COLORS[i % KNOB_COLORS.length]!;
+    ENVELOPE_COLORS[envelopeStage(param.id) ?? ''] ?? KNOB_COLORS[i % KNOB_COLORS.length]!;
+
+  /** The envelope stage a param sets ("attack", "op2Attack" → attack), if any. */
+  function envelopeStage(id: string): string | undefined {
+    const match = /^(?:attack|decay|sustain|release)$|(Attack|Decay|Sustain|Release)$/.exec(id);
+    return match ? (match[1] ?? match[0]).toLowerCase() : undefined;
+  }
+
+  /**
+   * The envelope a section's knobs set, for its strip: the ids of its attack, decay and
+   * sustain (release is the synth's shared one), or undefined if it has none.
+   */
+  function sectionEnvelope(knobs: readonly ParamDescriptor[]) {
+    const attack = knobs.find((p) => envelopeStage(p.id) === 'attack')?.id;
+    if (!attack) return undefined;
+    const prefix = attack.slice(0, attack.length - 'attack'.length);
+    const name = (stage: string) =>
+      prefix ? `${prefix}${stage[0]!.toUpperCase()}${stage.slice(1)}` : stage;
+    return { attack, decay: name('decay'), sustain: name('sustain'), release: 'release' };
+  }
   /** Param id → its knob's color: the screens draw each envelope stage (etc.) in it. */
   const knobColors = $derived(
     new Map(sections.flatMap((s) => s.knobs.map((p, i) => [p.id, knobColor(p, i)] as const))),
@@ -185,6 +206,8 @@
     <div class="body">
       {#if box.type === 'synth.drums'}
         <KitScreen lit={trackId ? session.litNotes.get(trackId) : undefined} />
+      {:else if box.type === 'synth.fm4'}
+        <AlgorithmScreen box={shownBox} />
       {:else if box.type === 'synth.pluck'}
         <NoteScreen box={shownBox} />
       {:else if isSynth && grouped}
@@ -196,10 +219,11 @@
       {/if}
       <div class="params" class:grouped>
         {#each sections as section (section.title ?? '')}
+          {@const envelopeIds = isSynth && grouped ? sectionEnvelope(section.knobs) : undefined}
           <section class="section" aria-label={section.title}>
             {#if section.title}<h4 class="section-title">{section.title}</h4>{/if}
-            {#if isSynth && grouped && section.knobs.some((p) => p.id === 'attack')}
-              <SynthScreen box={shownBox} colors={knobColors} compact />
+            {#if envelopeIds}
+              <SynthScreen box={shownBox} colors={knobColors} compact ids={envelopeIds} />
             {/if}
             {#if section.enums.length}
               <div class="enums">

@@ -16,6 +16,11 @@ export interface ParamDescriptor {
    */
   steps?: string[];
   /**
+   * How an enum param is shown: a selector (the default) or a stepped knob that shows its
+   * labels (for long lists, such as ratios, where a row of buttons wouldn't fit).
+   */
+  control?: 'knob';
+  /**
    * For display: 's' (seconds), '%' (0..1 shown as percent), 'st' (semitones), 'ct' (cents),
    * 'Hz' (frequency).
    */
