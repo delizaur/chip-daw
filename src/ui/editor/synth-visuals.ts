@@ -125,6 +125,33 @@ export function waveShape(box: BoxInstance): Point[] | null {
       if (wave === 2) return pulseLine(width);
       return sampled(shape);
     }
+    case 'synth.analog': {
+      // Two cycles of osc 1 (so the sub, an octave down, shows a whole cycle), mixed with osc 2.
+      const shape = (wave: number, phase: number) =>
+        wave === 0
+          ? 2 * phase - 1
+          : wave === 1
+            ? phase < 0.5
+              ? 1
+              : -1
+            : wave === 2
+              ? 1 - 4 * Math.abs(phase - 0.5)
+              : Math.sin(2 * Math.PI * phase);
+      const wave1 = Math.round(read('osc1Wave'));
+      const wave2 = Math.round(read('osc2Wave'));
+      const ratio = 2 ** (read('osc2Pitch') / 12);
+      const mix = read('mix', 0.5);
+      const sub = read('sub') * 0.8;
+      const scale = 1 / (1 + sub);
+      return sampled((t) => {
+        const phase = 2 * t;
+        const value =
+          (1 - mix) * shape(wave1, frac(phase)) +
+          mix * shape(wave2, frac(phase * ratio)) +
+          sub * (t < 0.5 ? 1 : -1);
+        return value * scale;
+      }, 320);
+    }
     default:
       return null;
   }
@@ -211,6 +238,15 @@ export function svgPath(points: readonly Point[], width: number, height: number)
  * isn't a waveform this knows. Used on the wave selector buttons.
  */
 export function waveIcon(boxType: string, paramId: string, value: number): string | undefined {
+  const saw = 'M2 10L12 2V10L22 2V10';
+  if (boxType === 'synth.analog' && (paramId === 'osc1Wave' || paramId === 'osc2Wave')) {
+    return [
+      saw,
+      'M2 10V2H12V10H22V2',
+      'M2 10L7 2L12 10L17 2L22 10',
+      'M2 6C5 -1 9 -1 12 6S19 13 22 6',
+    ][value];
+  }
   if (paramId !== 'wave') return undefined;
   const pulse = (duty: number) => `M2 10V2H${(2 + 20 * duty).toFixed(1)}V10H22V2`;
   const tri = 'M2 10L7 2L12 10L17 2L22 10';
@@ -226,7 +262,7 @@ export function waveIcon(boxType: string, paramId: string, value: number): strin
     ][value];
   }
   if (boxType === 'synth.sid') {
-    return [tri, 'M2 10L12 2V10L22 2V10', pulse(0.5), noiseIcon][value];
+    return [tri, saw, pulse(0.5), noiseIcon][value];
   }
   return undefined;
 }

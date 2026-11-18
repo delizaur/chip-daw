@@ -1,4 +1,5 @@
 import { isSteppedParam } from '../../model/automation';
+import { DRUM_SOUNDS } from '../../model/boxes/drum-synth';
 import type { ParamDescriptor } from '../../model/boxes/types';
 import { barsBetween, ticksPerBeat } from '../../model/time';
 import type { AutomationPoint, Clip, TempoMap, Tick } from '../../model/types';
@@ -51,6 +52,8 @@ export interface RollScene {
   playhead: Tick;
   /** Selection rectangle while Shift-dragging, in canvas pixels. */
   marquee: { x0: number; y0: number; x1: number; y1: number } | null;
+  /** A drum kit plays the clip: label every key with its drum (K, S, CH...). */
+  drumKit?: boolean;
 }
 
 export function drawPianoRoll(
@@ -209,6 +212,10 @@ export function drawPianoRoll(
     if (pitch % 12 === 0) {
       ctx.fillStyle = '#55545a';
       ctx.fillText(noteName(pitch), KEYS_WIDTH - 22, y + ROW_HEIGHT / 2 + 0.5);
+    }
+    if (scene.drumKit) {
+      ctx.fillStyle = black ? '#e9e8e4' : '#1a1a1d';
+      ctx.fillText(DRUM_SOUNDS[pitch % 12]!.short, 3, y + ROW_HEIGHT / 2 + 0.5);
     }
   }
   ctx.restore();

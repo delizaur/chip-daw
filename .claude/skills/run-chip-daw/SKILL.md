@@ -239,7 +239,7 @@ npm run lint     # also enforces that src/model and src/engine never import ui/a
 - **Piano roll auditions ring for ~300 ms.** Clicking or dragging notes plays them (not
   recorded). Wait ~600 ms after editing before checking that the meter is silent.
 - **Every run starts with empty storage**, so the library holds just the starter presets (folders
-  Bass, Drums, FX, Leads, all closed).
+  Bass, Drums, FX, Leads, Pads, all closed).
   Each driver run is a fresh browser context, so there's
   no autosave from earlier runs. Within one run, `goto` reloads the page and the autosave (written
   0.8 s after the last change) comes back.

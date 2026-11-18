@@ -6,6 +6,10 @@ import { ChipWave } from './boxes/chip-synth';
 import { ArpMode, ARP_RATES, FilterType, SYNC_DIVISIONS } from './boxes/effects';
 import { FM_RATIOS } from './boxes/fm-synth';
 import { createBox } from './boxes/registry';
+import { analogPresets } from './factory-presets-analog';
+import { drumPresets } from './factory-presets-drums';
+import { fm4Presets } from './factory-presets-fm4';
+import { pluckPresets } from './factory-presets-pluck';
 import { SidFilter, SidMod, SidWave } from './boxes/sid-synth';
 import { WAVES } from './boxes/wave-synth';
 import { createId } from './ids';
@@ -43,8 +47,17 @@ const sid = { synthType: 'synth.sid' };
 const division = (label: string) => SYNC_DIVISIONS.findIndex((d) => d.label === label);
 
 export function factoryLibrary(): Library {
-  const folders = ['Leads', 'Bass', 'Drums', 'FX'].map((name) => ({ id: createId(), name }));
-  const [leads, bass, drums, fx] = folders.map((f) => f.id) as [string, string, string, string];
+  const folders = ['Leads', 'Bass', 'Pads', 'Drums', 'FX'].map((name) => ({
+    id: createId(),
+    name,
+  }));
+  const [leads, bass, pads, drums, fx] = folders.map((f) => f.id) as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
   const entry = (folderId: string, p: Preset): LibraryPreset => ({ folderId, preset: p });
 
   const library: Library = {
@@ -575,6 +588,10 @@ export function factoryLibrary(): Library {
           { effects: [box('fx.bitcrush', { bits: 5, rate: 8000 })] },
         ),
       ),
+      ...analogPresets({ leads, bass, pads, fx }),
+      ...drumPresets(drums),
+      ...pluckPresets({ leads, bass, pads, fx }),
+      ...fm4Presets({ leads, bass, pads, fx }),
     ],
   };
   return { ...library, starters: library.presets.map((p) => p.preset.name) };

@@ -192,6 +192,8 @@ class Session {
   metronome = $state(false);
   /** Whether the arrangement shows the tempo lane (tempo and time-signature changes). */
   tempoLaneVisible = $state(true);
+  /** Per track id: the pitches it is playing right now (live or from clips), for key lights. */
+  litNotes = $state.raw<ReadonlyMap<string, ReadonlySet<number>>>(new Map());
   /**
    * Vertical scroll of the track rows, shared by the arrangement and the tracks sidebar so the
    * mixer rows stay level with their lanes.
@@ -263,6 +265,12 @@ class Session {
         );
       } else if (message.type === 'meters') {
         this.masterPeak = message.master;
+      } else if (message.type === 'notes') {
+        // A new map each time (it's $state.raw): only the listed tracks changed.
+        this.litNotes = new Map([
+          ...this.litNotes,
+          ...message.tracks.map((t) => [t.trackId, new Set(t.pitches)] as const),
+        ]);
       } else if (message.type === 'transport') {
         this.playing = message.playing;
         if (!message.playing) this.#endKnobRecording();

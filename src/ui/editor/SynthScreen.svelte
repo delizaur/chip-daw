@@ -1,6 +1,8 @@
 <!--
   A synth's little OLED screen, OP-1 style: one cycle of its oscillator, and its ADSR envelope
   with each stage drawn in the color of the knob that sets it. Redraws as the knobs move.
+  `compact`: just the envelope, as a wide, short strip filling its container (shown above the
+  envelope knobs of a synth whose params are grouped).
 -->
 <script lang="ts">
   import type { BoxInstance } from '../../model/types';
@@ -10,22 +12,48 @@
     box: BoxInstance;
     /** Param id → the color of its knob. */
     colors: ReadonlyMap<string, string>;
+    compact?: boolean;
+    /** The params of the envelope to draw (default: attack, decay, sustain, release). */
+    ids?: { attack: string; decay: string; sustain: string; release: string };
   }
 
-  let { box, colors }: Props = $props();
+  let {
+    box,
+    colors,
+    compact = false,
+    ids = { attack: 'attack', decay: 'decay', sustain: 'sustain', release: 'release' },
+  }: Props = $props();
 
-  const W = 168;
-  const H = 52;
+  /** The compact strip's width follows its container. */
+  let stripWidth = $state(0);
+  const W = $derived(compact ? Math.max(40, stripWidth - 10) : 168);
+  const H = $derived(compact ? 30 : 52);
 
-  const wave = $derived(waveShape(box));
-  const envelope = $derived(envelopeShape(box));
-  /** FM: the modulator's envelope (brightness over the note), drawn dashed behind. */
+  const wave = $derived(compact ? null : waveShape(box));
+  const envelope = $derived(envelopeShape(box, ids));
+  /**
+   * A second envelope drawn dashed behind: FM's modulator envelope (brightness over the note),
+   * the analog synth's filter envelope. Each has a fixed attack and shares the amp's release.
+   */
+  const SECOND_ENVELOPES: Record<
+    string,
+    { decay: string; sustain: string; attack: number; label: string }
+  > = {
+    'synth.fm': { decay: 'modDecay', sustain: 'modSustain', attack: 0.001, label: 'mod' },
+    'synth.analog': {
+      decay: 'filterDecay',
+      sustain: 'filterSustain',
+      attack: 0.003,
+      label: 'filter',
+    },
+  };
+  const second = $derived(SECOND_ENVELOPES[box.type]);
   const modEnvelope = $derived(
-    box.type === 'synth.fm'
+    second
       ? envelopeShape(
           box,
-          { attack: 'attack', decay: 'modDecay', sustain: 'modSustain', release: 'release' },
-          0.001,
+          { attack: 'attack', decay: second.decay, sustain: second.sustain, release: 'release' },
+          second.attack,
         )
       : null,
   );
@@ -43,7 +71,7 @@
 </script>
 
 {#if wave || envelope}
-  <div class="screen" aria-hidden="true">
+  <div class="screen" class:compact aria-hidden="true" bind:clientWidth={stripWidth}>
     {#if wave}
       <figure>
         <svg viewBox="-2 -2 {W + 4} {H + 4}" width={W} height={H}>
@@ -71,23 +99,32 @@
               ])}
             />
           {/if}
-          <path d={path(envelope.attack)} style:stroke={color('attack')} />
-          <path d={path(envelope.decay)} style:stroke={color('decay')} />
-          <path d={path(envelope.sustain)} style:stroke={color('sustain')} />
-          <path d={path(envelope.release)} style:stroke={color('release')} />
+          <path d={path(envelope.attack)} style:stroke={color(ids.attack)} />
+          <path d={path(envelope.decay)} style:stroke={color(ids.decay)} />
+          <path d={path(envelope.sustain)} style:stroke={color(ids.sustain)} />
+          <path d={path(envelope.release)} style:stroke={color(ids.release)} />
           {#each joints as joint, i (i)}
             <circle cx={joint.x} cy={joint.y} r="2.5" />
           {/each}
         </svg>
-        <figcaption>
-          Envelope{#if modEnvelope}<span class="legend">┄ mod</span>{/if}
-        </figcaption>
+        {#if !compact}
+          <figcaption>
+            Envelope{#if modEnvelope}<span class="legend">┄ {second?.label}</span>{/if}
+          </figcaption>
+        {/if}
       </figure>
     {/if}
   </div>
 {/if}
 
 <style>
+  /* As tall as a row of selectors, so the knobs below line up with the other sections'. */
+  .screen.compact {
+    justify-content: center;
+    height: 40px;
+    padding: 0 var(--space-1);
+  }
+
   .screen {
     display: flex;
     flex-direction: column;

@@ -4,6 +4,7 @@ import { createEffect, createSequencer, createSynth } from './boxes/registry';
 import type { BlockContext, EffectRuntime, SequencerRuntime, SynthRuntime } from './boxes/types';
 import { buildCurves, type AutomationCurve } from './automation';
 import { SmoothedValue, volumeToGain } from './dsp';
+import { litChanges, NoteLights } from './note-lights';
 import { BlockEvents, firstNoteFrom, scheduleNotes, type ScheduledNote } from './note-schedule';
 
 /** The part of the song one block covers while playing. */
@@ -86,6 +87,8 @@ export class PresetChain {
   #stageEvents: BlockEvents[] = [];
   /** Note events for the coming block (filled by the track, consumed by `process`). */
   readonly input = new BlockEvents();
+  /** The notes reaching the synth, for the UI's key lights. */
+  readonly lights = new NoteLights();
   #left = new Float32Array(128);
   #right = new Float32Array(128);
 
@@ -290,19 +293,26 @@ export class PresetChain {
     this.#wake();
     const first = this.#activeSequencers[0];
     if (first) first.noteOn(pitch, velocity, 0);
-    else this.#synth?.noteOn(pitch, velocity);
+    else {
+      this.#synth?.noteOn(pitch, velocity);
+      this.lights.on(pitch);
+    }
   }
 
   noteOff(pitch: number): void {
     this.#held = Math.max(0, this.#held - 1);
     const first = this.#activeSequencers[0];
     if (first) first.noteOff(pitch, 0);
-    else this.#synth?.noteOff(pitch);
+    else {
+      this.#synth?.noteOff(pitch);
+      this.lights.off(pitch);
+    }
   }
 
   allNotesOff(): void {
     for (const slot of this.#sequencers) slot.runtime?.reset();
     this.#synth?.allNotesOff();
+    this.lights.release();
     this.#held = 0;
   }
 
@@ -356,8 +366,14 @@ export class PresetChain {
         synth?.process(left, right, position, offset - position);
         position = offset;
       }
-      if (events.isOn(i)) synth?.noteOn(events.pitches[i]!, events.velocities[i]!);
-      else synth?.noteOff(events.pitches[i]!);
+      const pitch = events.pitches[i]!;
+      if (events.isOn(i)) {
+        synth?.noteOn(pitch, events.velocities[i]!);
+        this.lights.on(pitch);
+      } else {
+        synth?.noteOff(pitch);
+        this.lights.off(pitch);
+      }
     }
     if (position < frames) synth?.process(left, right, position, frames - position);
 
@@ -409,6 +425,10 @@ export class TrackRuntime {
   readonly #liveChain: (PresetChain | null)[] = new Array<PresetChain | null>(128).fill(null);
   #left = new Float32Array(128);
   #right = new Float32Array(128);
+  /** The pitches last reported lit (see `litChanges`). */
+  readonly #lit = new Uint8Array(128);
+  /** The chains' note lights, rebuilt with `#chains`. */
+  #lights: NoteLights[] = [];
 
   constructor(id: string, sampleRate: number) {
     this.id = id;
@@ -416,6 +436,15 @@ export class TrackRuntime {
     this.#gain = new SmoothedValue(0, sampleRate);
     this.live = new PresetChain(sampleRate);
     this.#chains = [this.live];
+    this.#lights = [this.live.lights];
+  }
+
+  /**
+   * The pitches this track's synths are playing (or struck since the last call), or null if
+   * that hasn't changed since the last call. For the UI's key lights.
+   */
+  litChanges(): number[] | null {
+    return litChanges(this.#lights, this.#lit);
   }
 
   /** The chain playing clips with preset `presetId`, if this track has any. */
@@ -454,7 +483,10 @@ export class TrackRuntime {
       }
       chain.sync(presets.get(presetId) ?? null);
     }
-    if (chainsChanged) this.#chains = [this.live, ...this.#clipChains.values()];
+    if (chainsChanged) {
+      this.#chains = [this.live, ...this.#clipChains.values()];
+      this.#lights = this.#chains.map((c) => c.lights);
+    }
 
     const clipsChanged = track.clips !== this.#clips;
     if (clipsChanged) {

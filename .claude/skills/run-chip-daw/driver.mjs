@@ -879,9 +879,9 @@ async function smoke(c) {
         "[...document.querySelectorAll('.library .preset .label')].map(e => e.textContent).join(', ')",
       ]),
     );
+  // The saved copy sits next to the starter it came from (whatever else the Bass folder holds).
   check(
-    (await libraryNames()) ===
-      'FM bass, FM slap bass, Pulse bass, SID bass, SID pulse bass, Triangle bass, Triangle bass, Wave bass, Wave sine bass',
+    (await libraryNames()).split(', ').filter((n) => n === 'Triangle bass').length === 2,
     `the track's preset saves into the library (${await libraryNames()})`,
   );
   await c.click(['button', 'Rename', 'preset']);
