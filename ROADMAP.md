@@ -68,7 +68,11 @@ Order: the synth engines first (one at a time: FM, Game Boy, SID), then the rest
 - [x] Game Boy-style wavetable synth ("Wave": 8 preset 4-bit waves with a morph knob), with starter presets
 - [x] SID-style synth (Commodore 64: tri/saw/pulse with PWM/noise, ring mod and sync, shared resonant filter), with starter presets
 - [ ] Possibly a sampler (needs audio stored in projects and the library)
-- [ ] Visual polish pass on the OP-1-inspired look
+- [x] Visual polish pass on the OP-1-inspired look
+- [x] Analog synth (virtual analog: 2 oscillators with unison and sub, 4-pole ladder filter with its own envelope, LFO, glide), with starter presets
+- [x] Drum synth (a synthesized kit, one drum per note of the octave: 808-style kick, snare, hats, toms and percussion), with starter kits
+- [x] Pluck synth (Karplus-Strong string model: pluck, strike or bow, stiffness, wooden body), with starter presets
+- [x] FM 4-op synth (DX / Mega Drive style: 4 operators, 8 algorithms, feedback), with starter presets
 - [ ] PWA: installable, works offline
 - [ ] Performance profiling; move hot DSP to WASM only if needed
 

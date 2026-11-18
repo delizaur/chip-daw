@@ -6,7 +6,15 @@
   import BottomPanel from './ui/editor/BottomPanel.svelte';
   import { installComputerKeyboard } from './ui/input/computer-keyboard';
   import { installKeymap, type KeyHandler } from './ui/keymap';
-  import { session } from './ui/state/session.svelte';
+  import { BOTTOM_MIN_HEIGHT, session } from './ui/state/session.svelte';
+
+  let windowHeight = $state(0);
+  /** Room the top bar and the arrangement keep however tall the bottom panel is dragged. */
+  const KEEP_ABOVE = 260;
+  /** The bottom panel's height as shown: what was set, within what the window allows. */
+  const bottomHeight = $derived(
+    Math.max(BOTTOM_MIN_HEIGHT, Math.min(session.bottomHeight, windowHeight - KEEP_ABOVE)),
+  );
 
   /**
    * A shortcut that only applies while the computer keyboard piano is off (its letter keys play
@@ -113,7 +121,13 @@
   });
 </script>
 
-<div class="app">
+<svelte:window bind:innerHeight={windowHeight} />
+
+<div
+  class="app"
+  style:--bottom-height="{bottomHeight}px"
+  style:--bottom-extra="{bottomHeight - BOTTOM_MIN_HEIGHT}px"
+>
   <div class="top"><TopBar /></div>
   <div class="left"><LibraryPanel /></div>
   <div class="center"><Arrangement /></div>
@@ -126,9 +140,9 @@
     display: grid;
     height: 100%;
     grid-template-columns: 220px minmax(0, 1fr) 280px;
-    /* The preset editor and the piano roll share one height: switching tabs doesn't move the
-       arrangement. */
-    grid-template-rows: auto minmax(0, 1fr) 380px;
+    /* The preset editor and the piano roll share one height (adjustable from the panel's top
+       edge): switching tabs doesn't move the arrangement. */
+    grid-template-rows: auto minmax(0, 1fr) var(--bottom-height);
     grid-template-areas:
       'top top top'
       'left center right'

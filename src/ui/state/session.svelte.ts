@@ -123,6 +123,20 @@ const NOTICE_MS = 5000;
  * Every project change flows History → `project` (for the UI) + patches → engine, and
  * schedules an autosave.
  */
+/** The bottom panel's smallest height: everything in the preset editor fits at this size. */
+export const BOTTOM_MIN_HEIGHT = 380;
+const BOTTOM_HEIGHT_KEY = 'chip-daw.bottomHeight';
+
+function loadBottomHeight(): number {
+  try {
+    const saved = Number(localStorage.getItem(BOTTOM_HEIGHT_KEY));
+    if (Number.isFinite(saved) && saved > 0) return Math.max(BOTTOM_MIN_HEIGHT, saved);
+  } catch {
+    // Storage blocked: start at the minimum.
+  }
+  return BOTTOM_MIN_HEIGHT;
+}
+
 class Session {
   readonly #history = new History<Project>(createProject());
   readonly #engine = new EngineBridge();
@@ -219,6 +233,20 @@ class Session {
 
   // Bottom panel and piano roll.
   bottomTab = $state<'preset' | 'pianoRoll'>('preset');
+  /**
+   * Height of the bottom panel (preset editor / piano roll), in pixels: at least
+   * BOTTOM_MIN_HEIGHT, and remembered in this browser. The window may show less (see App).
+   */
+  bottomHeight = $state(loadBottomHeight());
+
+  setBottomHeight(height: number): void {
+    this.bottomHeight = Math.max(BOTTOM_MIN_HEIGHT, Math.round(height));
+    try {
+      localStorage.setItem(BOTTOM_HEIGHT_KEY, String(this.bottomHeight));
+    } catch {
+      // Storage blocked (private mode...): the height just isn't remembered.
+    }
+  }
   /** The clip shown in the piano roll (follows a single selected clip). */
   editingClip = $state.raw<ClipAddress | null>(null);
   selectedNoteIds = $state.raw<ReadonlySet<string>>(new Set());

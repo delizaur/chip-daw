@@ -26,8 +26,10 @@
 
   /** The compact strip's width follows its container. */
   let stripWidth = $state(0);
+  let stripHeight = $state(0);
   const W = $derived(compact ? Math.max(40, stripWidth - 10) : 168);
-  const H = $derived(compact ? 24 : 48);
+  /** A strip grows with the panel (see its CSS), up to the full screen's 48. */
+  const H = $derived(compact ? Math.min(48, Math.max(24, stripHeight - 6)) : 48);
 
   const wave = $derived(compact ? null : waveShape(box));
   const envelope = $derived(envelopeShape(box, ids));
@@ -71,7 +73,13 @@
 </script>
 
 {#if wave || envelope}
-  <div class="screen" class:compact aria-hidden="true" bind:clientWidth={stripWidth}>
+  <div
+    class="screen"
+    class:compact
+    aria-hidden="true"
+    bind:clientWidth={stripWidth}
+    bind:clientHeight={stripHeight}
+  >
     {#if wave}
       <figure>
         <svg viewBox="-2 -2 {W + 4} {H + 4}" width={W} height={H}>
@@ -121,7 +129,9 @@
   /* As tall as a row of selectors, so the knobs below line up with the other sections'. */
   .screen.compact {
     justify-content: center;
-    height: 32px;
+    /* As tall as a row of selectors, plus half of the height the bottom panel was enlarged by
+       (a box has two rows of sections), up to the full screen's 48 px graph. */
+    height: calc(32px + min(24px, var(--bottom-extra, 0px) / 2));
     padding: 0 var(--space-1);
   }
 

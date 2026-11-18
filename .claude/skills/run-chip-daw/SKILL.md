@@ -132,7 +132,7 @@ it shows with `eval chipDaw.session.presetView` and the track's own preset with
 `Cutoff`; ones with automation read `● Level`), button `Clear` (the lane's automation), and per sequencer/effect box `<Name> on` (bypass toggle),
 `Move <Name> left`/`right`, `Remove <Name>`; comboboxes `Add sequencer`, `Add effect` (options
 `Arpeggiator`; `Bitcrush`, `Filter`, `Delay`, `Reverb`) and `<Name> type` (replace a box); tabs `Preset`, `Piano roll`; radios (grid) `1/4`, `1/8`, `1/16`,
-`1/32`; img `MIDI activity` (its `title` is the last message); spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
+`1/32`; img `MIDI activity` (its `title` is the last message); separator `Resize editor` (the bottom panel's top edge: drag it, ↑/↓ when focused, double-click resets to 380 px; the height is remembered in localStorage); spinbutton `Tempo`; sliders `Master`, `Track N volume`, and the synth knobs `Attack`,
 `Decay`, `Sustain`, `Release`, `Level`, `Transpose`, `Fine`; radios (wave) `12.5%`, `25%`, `50%`,
 `Tri`, `Noise`, `Metal`; combobox `MIDI input`. Piano keys (physical): `KeyA`…`Semicolon` play
 C4…E5, `KeyZ`/`KeyX` octave, `KeyC`/`KeyV` velocity, `Escape` releases all notes. Shortcuts:
