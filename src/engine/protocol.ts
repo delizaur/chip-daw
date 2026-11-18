@@ -62,6 +62,11 @@ export type EngineToUi =
    * handled, so the UI can ignore positions reported before its latest seek arrived.
    */
   | { type: 'transport'; playing: boolean; tick: Tick; countIn: number; seekSeq: number }
+  /**
+   * The notes tracks are playing (live or from clips, after their sequencers), for key
+   * lights: each listed track's sounding pitches. Sent only for tracks whose notes changed.
+   */
+  | { type: 'notes'; tracks: { trackId: string; pitches: number[] }[] }
   /** A recording pass started (record armed and playing). */
   | { type: 'takeStarted'; startTick: Tick }
   /**

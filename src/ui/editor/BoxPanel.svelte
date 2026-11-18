@@ -17,6 +17,7 @@
   import Segmented from '../controls/Segmented.svelte';
   import { session } from '../state/session.svelte';
   import EffectScreen from './EffectScreen.svelte';
+  import KitScreen from './KitScreen.svelte';
   import SynthScreen from './SynthScreen.svelte';
   import { waveIcon } from './synth-visuals';
 
@@ -29,9 +30,11 @@
     /** Position within its list (sequencers or effects) and the list's length; synth: 0 of 1. */
     index: number;
     count: number;
+    /** The track it plays on (its notes light up the drum synth's keys). */
+    trackId?: string;
   }
 
-  let { box, target, index, count, curves = [] }: Props = $props();
+  let { box, target, index, count, curves = [], trackId }: Props = $props();
 
   /** Knob colors cycle like the OP-1's four encoders. */
   const KNOB_COLORS = ['var(--c-blue)', 'var(--c-green)', 'var(--c-pink)', 'var(--c-orange)'];
@@ -179,7 +182,9 @@
 
   {#if descriptor}
     <div class="body">
-      {#if isSynth && grouped}
+      {#if box.type === 'synth.drums'}
+        <KitScreen lit={trackId ? session.litNotes.get(trackId) : undefined} />
+      {:else if isSynth && grouped}
         <!-- The envelope is drawn in its own section (see below); no wave screen. -->
       {:else if isSynth}
         <SynthScreen box={shownBox} colors={knobColors} />

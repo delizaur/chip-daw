@@ -180,7 +180,14 @@
           />
           <span class="arrow" aria-hidden="true">→</span>
         {/each}
-        <BoxPanel box={view.preset.synth} {curves} target={view.target} index={0} count={1} />
+        <BoxPanel
+          box={view.preset.synth}
+          {curves}
+          target={view.target}
+          index={0}
+          count={1}
+          trackId={view.track.id}
+        />
         {#each view.preset.effects as box, i (box.id)}
           <span class="arrow" aria-hidden="true">→</span>
           <BoxPanel

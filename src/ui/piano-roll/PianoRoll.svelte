@@ -28,6 +28,7 @@
   import type { ParamDescriptor } from '../../model/boxes/types';
   import { PPQ } from '../../model/constants';
   import { createId } from '../../model/ids';
+  import { DRUM_SYNTH } from '../../model/boxes/drum-synth';
   import { findPresetById } from '../../model/presets';
   import { addNotes, quantizeNotes, updateNotes, type NoteChange } from '../../model/note-commands';
   import { floorInMeter, meterAt, snapInMeter, ticksPerBeat } from '../../model/time';
@@ -275,6 +276,7 @@
       selected: session.selectedNoteIds,
       playhead: session.playheadAt(),
       marquee,
+      drumKit: preset?.synth.type === DRUM_SYNTH.type,
     });
   }
 
@@ -287,6 +289,7 @@
       height,
       marquee,
       themeVersion,
+      preset,
       session.selectedNoteIds,
       session.pianoRollGrid,
       session.position,

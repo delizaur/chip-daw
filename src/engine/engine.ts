@@ -524,6 +524,12 @@ export class Engine {
       this.#lastReportedPeak = this.#masterPeak;
     }
     if (this.#playing || this.#countIn > 0) this.#reportTransport();
+    let notes: { trackId: string; pitches: number[] }[] | null = null;
+    for (const track of this.#tracks) {
+      const pitches = track.litChanges();
+      if (pitches) (notes ??= []).push({ trackId: track.id, pitches });
+    }
+    if (notes) this.#emit({ type: 'notes', tracks: notes });
     this.#masterPeak = 0;
     this.#framesSinceReport = 0;
   }
