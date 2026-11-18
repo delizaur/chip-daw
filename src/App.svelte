@@ -136,6 +136,7 @@
       w: orBrowse('up', () => false),
       s: orBrowse('down', hold('solo')),
       enter: orBrowse('enter', enter),
+      k: whenPianoOff(() => session.toggleKeyboardTab()),
       // I (for instrument) turns library browsing on and off; I isn't a piano key.
       i: () => libraryStore.toggleBrowsing(),
       u: whenPianoOff(() => session.clipPresetShortcut('unique')),

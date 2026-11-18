@@ -92,6 +92,7 @@ EOF
 | `click-at <css> <x> <y> [shift\|alt]` | click at a point relative to an element, e.g. `click-at .timeline-canvas 112 10` (ruler, bar 2) |
 | `dblclick-at <css> <x> <y>` | double-click at a point (empty lane: creates a one-bar clip) |
 | `drag-at <css> <x1> <y1> <x2> <y2> [shift\|alt\|middle]` | pointer drag between element-relative points (move/resize clips; from empty lane space: marquee selection; `middle`: pan the timeline) |
+| `mouse-down-at <css> <x> <y>` / `mouse-move-at <css> <x> <y>` / `mouse-up` | press and hold the left button, move while holding, release (e.g. play and slide on the keyboard view's `.piano`) |
 | `wheel-at <css> <x> <y> <dx> <dy> [ctrl]` | mouse wheel over a point (the timeline scrolls sideways on either axis; `ctrl` zooms) |
 | `meter-max <ms>` | highest meter level while polling for `<ms>`; use it to check playback without timing guesses |
 | `drag <role> <name…> <dx> <dy>` | pointer drag from the element's center; knobs: negative dy = up = increase |

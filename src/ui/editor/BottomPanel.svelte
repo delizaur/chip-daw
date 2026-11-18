@@ -1,7 +1,9 @@
 <!--
-  Bottom panel: the selected track's preset, or the piano roll of the clip being edited.
+  Bottom panel: the selected track's preset, the piano roll of the clip being edited, or the
+  keyboard view (K).
 -->
 <script lang="ts">
+  import KeyboardView from '../keyboard/KeyboardView.svelte';
   import PianoRoll from '../piano-roll/PianoRoll.svelte';
   import { session } from '../state/session.svelte';
   import PresetEditor from './PresetEditor.svelte';
@@ -86,12 +88,21 @@
       }}
       >Piano roll{#if clipLabel}<span class="clip-label">· {clipLabel}</span>{/if}</button
     >
+    <button
+      type="button"
+      role="tab"
+      title="Keyboard (K, with the keyboard piano off)"
+      aria-selected={session.bottomTab === 'keyboard'}
+      onclick={() => (session.bottomTab = 'keyboard')}>Keyboard</button
+    >
   </div>
   <div class="content">
     {#if session.bottomTab === 'preset'}
       <PresetEditor />
-    {:else}
+    {:else if session.bottomTab === 'pianoRoll'}
       <PianoRoll />
+    {:else}
+      <KeyboardView />
     {/if}
   </div>
 </section>

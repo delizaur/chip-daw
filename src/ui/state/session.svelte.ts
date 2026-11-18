@@ -59,7 +59,10 @@ import { MAX_OCTAVE, MIN_OCTAVE, shiftVelocity } from '../input/computer-keyboar
 export type AudioStatus = 'off' | 'starting' | 'running' | 'error';
 export type MidiStatus = 'off' | 'connecting' | 'ready' | 'unsupported' | 'error';
 /** Where a live note came from. Each source's held notes are tracked separately. */
-export type NoteSource = 'keyboard' | 'midi';
+export type NoteSource = 'keyboard' | 'midi' | 'mouse';
+
+/** The bottom panel's tabs. */
+export type BottomTab = 'preset' | 'pianoRoll' | 'keyboard';
 /** Which editor keyboard shortcuts (delete, copy, arrows...) act on: the last one clicked. */
 export type FocusArea = 'arrangement' | 'pianoRoll';
 
@@ -214,6 +217,8 @@ class Session {
   tempoLaneVisible = $state(true);
   /** Per track id: the pitches it is playing right now (live or from clips), for key lights. */
   litNotes = $state.raw<ReadonlyMap<string, ReadonlySet<number>>>(new Map());
+  /** Notes played live and held now (any source): pitch → id of the track they play on. */
+  liveNotes = $state.raw<ReadonlyMap<number, string>>(new Map());
   /**
    * Vertical scroll of the track rows, shared by the arrangement and the tracks sidebar so the
    * mixer rows stay level with their lanes.
@@ -238,7 +243,9 @@ class Session {
   #clipboard: { trackOffset: number; clip: Clip; preset: Preset | undefined }[] = [];
 
   // Bottom panel and piano roll.
-  bottomTab = $state<'preset' | 'pianoRoll'>('preset');
+  bottomTab = $state<BottomTab>('preset');
+  /** The tab K goes back to when it closes the keyboard view. */
+  #tabBeforeKeyboard: BottomTab = 'preset';
   /**
    * Height of the bottom panel (preset editor / piano roll), in pixels: at least
    * BOTTOM_MIN_HEIGHT, and remembered in this browser. The window may show less (see App).
@@ -444,6 +451,16 @@ class Session {
     if (index >= 0 && index < this.project.tracks.length) this.selectedTrackIndex = index;
   }
 
+  /** K: opens the keyboard view, or closes it (back to the tab that was open before). */
+  toggleKeyboardTab(): void {
+    if (this.bottomTab === 'keyboard') {
+      this.bottomTab = this.#tabBeforeKeyboard;
+    } else {
+      this.#tabBeforeKeyboard = this.bottomTab;
+      this.bottomTab = 'keyboard';
+    }
+  }
+
   // --- Live notes -------------------------------------------------------------------------
 
   /** Plays a note on the selected track. */
@@ -455,6 +472,7 @@ class Session {
     if (previous) this.#engine.send({ type: 'noteOff', trackId: previous, pitch });
     this.#held.set(key, track.id);
     this.#engine.send({ type: 'noteOn', trackId: track.id, pitch, velocity });
+    this.#updateLiveNotes();
   }
 
   noteOff(source: NoteSource, pitch: number): void {
@@ -463,6 +481,13 @@ class Session {
     if (!trackId) return;
     this.#held.delete(key);
     this.#engine.send({ type: 'noteOff', trackId, pitch });
+    this.#updateLiveNotes();
+  }
+
+  #updateLiveNotes(): void {
+    this.liveNotes = new Map(
+      [...this.#held].map(([key, trackId]) => [Number(key.slice(key.indexOf(':') + 1)), trackId]),
+    );
   }
 
   /** Releases every note held by one input source. */
@@ -475,6 +500,7 @@ class Session {
   /** Panic: releases every note on every track. */
   allNotesOff(): void {
     this.#held.clear();
+    this.#updateLiveNotes();
     this.#engine.send({ type: 'allNotesOff' });
   }
 
@@ -485,7 +511,7 @@ class Session {
     this.showNotice(
       this.keyboardPiano
         ? 'Computer keyboard plays notes.'
-        : 'Computer keyboard shortcuts: R record, O overdub, M metronome, L loop, arrows select clips, A/D clip edges, Enter piano roll, U/P/T clip preset buttons.',
+        : 'Computer keyboard shortcuts: R record, O overdub, C metronome, L loop, M/S mute/solo, A/D clip edges, Enter piano roll, K keyboard view, I browse presets, U/P/T clip preset buttons.',
     );
   }
 

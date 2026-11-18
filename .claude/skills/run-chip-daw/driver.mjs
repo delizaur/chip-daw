@@ -148,6 +148,20 @@ function createCommands(page, url, errors) {
       await page.mouse.up({ button });
       if (key) await page.keyboard.up(key);
     },
+    /** mouse-down-at <css> <x> <y>: presses the left button at a point (and holds it). */
+    async 'mouse-down-at'([selector, x, y]) {
+      const box = await page.locator(selector).first().boundingBox();
+      await page.mouse.move(box.x + Number(x), box.y + Number(y));
+      await page.mouse.down();
+    },
+    /** mouse-move-at <css> <x> <y>: moves the mouse (a held button stays held). */
+    async 'mouse-move-at'([selector, x, y]) {
+      const box = await page.locator(selector).first().boundingBox();
+      await page.mouse.move(box.x + Number(x), box.y + Number(y), { steps: 5 });
+    },
+    async 'mouse-up'() {
+      await page.mouse.up();
+    },
     /** wheel-at <css> <x> <y> <dx> <dy> [ctrl]: turns the mouse wheel over a point. */
     async 'wheel-at'([selector, x, y, dx, dy, modifier]) {
       const box = await page.locator(selector).first().boundingBox();
@@ -982,6 +996,28 @@ async function smoke(c) {
   await c.press(['i']);
   check((await state('chipDaw.library.browsing')) === false, 'I again stops browsing');
   await c.press(['Control+z']); // back to Triangle bass for the checks below
+
+  // Keyboard view: clicking a key plays it (lit as a live note), sliding moves to the next.
+  await c.click(['tab', 'Keyboard']);
+  const live = () => state('[...chipDaw.session.liveNotes.keys()].join(" ")');
+  await c['mouse-down-at'](['.piano', '700', '150']);
+  const firstKey = await live();
+  const pianoLevel = await c.meter();
+  await c['mouse-move-at'](['.piano', '760', '150']);
+  const slid = await live();
+  await c['mouse-up']([]);
+  check(
+    /^\d+$/.test(firstKey) &&
+      pianoLevel > 0.02 &&
+      /^\d+$/.test(slid) &&
+      slid !== firstKey &&
+      (await live()) === '',
+    `clicking the keyboard view plays a note (${firstKey} → ${slid}, meter ${pianoLevel.toFixed(3)})`,
+  );
+  await c.click(['button', 'Note', 'names']);
+  check((await c.text(['.piano'])).includes('D4'), 'Names shows every note name');
+  await c.click(['button', 'Note', 'names']);
+  await c.click(['tab', 'Preset']);
   check((await undoTitle()).startsWith('Undo Load Triangle bass'), 'loading a preset is undoable');
   await c.click(['button', 'Save', 'Track', '1', 'preset']);
   const libraryNames = async () =>
