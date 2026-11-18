@@ -36,6 +36,11 @@ export interface ParamDescriptor {
  * Static description of a box type. Shared by the engine (defaults, ranges) and the UI
  * (the preset editor is rendered from it), so a new box needs no UI code.
  */
+/** Puts each param in its section (`groups`: param id → section name). */
+export function inGroups(params: ParamDescriptor[], groups: Record<string, string>) {
+  return params.map((p) => (groups[p.id] ? { ...p, group: groups[p.id] } : p));
+}
+
 export interface BoxDescriptor {
   /** Registry key, e.g. "synth.chip". Stored in BoxInstance.type, so never rename one. */
   type: string;

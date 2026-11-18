@@ -15,6 +15,8 @@
     /** Accessible name for the group. */
     label: string;
     color?: string;
+    /** Small: shorter buttons, for packed panels (still a comfortable click target). */
+    size?: 'small' | 'medium';
     disabled?: boolean;
     onchange: (value: T) => void;
   }
@@ -24,6 +26,7 @@
     options,
     label,
     color = 'var(--accent)',
+    size = 'medium',
     disabled = false,
     onchange,
   }: Props = $props();
@@ -42,7 +45,7 @@
 </script>
 
 <div
-  class="segmented"
+  class="segmented {size}"
   role="radiogroup"
   aria-label={label}
   aria-disabled={disabled}
@@ -90,6 +93,7 @@
     border-radius: var(--r-s);
     font-size: var(--text-s);
     font-weight: 500;
+    white-space: nowrap;
     color: var(--ink-dim);
   }
 
@@ -114,6 +118,10 @@
     stroke: currentColor;
     stroke-width: 1.5;
     stroke-linejoin: round;
+  }
+
+  .small button {
+    height: 26px;
   }
 
   button:disabled {

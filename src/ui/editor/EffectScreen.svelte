@@ -16,7 +16,7 @@
   let { box, colors }: Props = $props();
 
   const W = 168;
-  const H = 72;
+  const H = 56;
 
   const screen = $derived(effectScreen(box));
   const stroke = (line: ScreenLine) =>

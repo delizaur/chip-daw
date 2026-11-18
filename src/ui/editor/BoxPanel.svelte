@@ -203,7 +203,7 @@
   </header>
 
   {#if descriptor}
-    <div class="body">
+    <div class="body" class:stacked={!grouped}>
       {#if box.type === 'synth.drums'}
         <KitScreen lit={trackId ? session.litNotes.get(trackId) : undefined} />
       {:else if box.type === 'synth.fm4'}
@@ -254,6 +254,7 @@
                         options={options(param)}
                         value={shown(param)}
                         color="var(--c-blue)"
+                        size="small"
                         onchange={(v) => set(param, v)}
                       />
                     {/if}
@@ -273,7 +274,7 @@
                   step={param.step}
                   scale={param.scale}
                   color={knobColor(param, i)}
-                  size={44}
+                  size={38}
                   format={(v) => formatParam(param, v)}
                   onstart={() => session.begin(`Change ${param.name}`)}
                   oninput={(v) => set(param, v)}
@@ -294,8 +295,8 @@
   .box {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-3) var(--space-4) var(--space-4);
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) var(--space-3);
     border-radius: var(--r-l);
     background: var(--panel-raised);
     box-shadow: var(--shadow-raised);
@@ -386,6 +387,23 @@
     gap: var(--space-4);
   }
 
+  /* Boxes without sections: the screen on top, the controls under it. As wide as the knob
+     row (min-content): the selectors wrap under each other rather than widen the box. */
+  .body.stacked {
+    flex-direction: column;
+    gap: var(--space-2);
+    width: min-content;
+  }
+
+  .stacked .params {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .stacked .knobs {
+    flex-wrap: nowrap;
+  }
+
   .params {
     display: flex;
     gap: var(--space-4);
@@ -397,11 +415,31 @@
     gap: var(--space-3);
   }
 
-  /* Grouped boxes: sections side by side, split by hairlines; each a row of selectors over a
-     row of knobs, so even big synths stay as short as the others. */
-  .grouped .section + .section {
+  /* Grouped boxes: sections two to a column (in the order the box lists them), split by
+     hairlines; each a row of selectors over a row of knobs. */
+  .params.grouped {
+    display: grid;
+    grid-template-rows: auto auto;
+    grid-auto-flow: column;
+    gap: var(--space-3) var(--space-4);
+  }
+
+  .params.grouped {
+    row-gap: var(--space-2);
+  }
+
+  .grouped .section {
+    gap: var(--space-1);
+  }
+
+  .grouped .section:nth-child(n + 3) {
     padding-left: var(--space-4);
     border-left: 1px solid var(--line);
+  }
+
+  .grouped .section:nth-child(even) {
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--line);
   }
 
   .grouped .enums {
@@ -415,6 +453,7 @@
 
   .section-title {
     font-size: var(--text-xs);
+    line-height: 1.2;
     font-weight: 500;
     letter-spacing: 0.12em;
     text-transform: uppercase;

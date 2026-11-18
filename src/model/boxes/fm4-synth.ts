@@ -90,14 +90,16 @@ export const FM4_SYNTH: BoxDescriptor = {
       unit: undefined,
     }),
     knob('Algorithm', 'feedback', 'Feedback', 0, 1, 0),
+    // Output next: the editor shows sections two to a column (Algorithm over Output, then
+    // the operators in pairs).
+    knob('Output', 'release', 'Release', 0.001, 8, 0.3, { scale: 'exp', unit: 's' }),
+    knob('Output', 'level', 'Level', 0, 1, 0.7),
+    knob('Output', 'transpose', 'Transpose', -24, 24, 0, { step: 1, unit: 'st' }),
+    knob('Output', 'fine', 'Fine', -100, 100, 0, { step: 1, unit: 'ct' }),
     // A classic electric-piano-ish default: bright attack fading to a mellow tone.
     ...operator(1, 1, 0.8, 1.5, 0.4),
     ...operator(2, 1, 0.45, 0.6, 0.2),
     ...operator(3, 2, 0.3, 0.4, 0.1),
     ...operator(4, 1, 0.2, 0.3, 0),
-    knob('Output', 'release', 'Release', 0.001, 8, 0.3, { scale: 'exp', unit: 's' }),
-    knob('Output', 'level', 'Level', 0, 1, 0.7),
-    knob('Output', 'transpose', 'Transpose', -24, 24, 0, { step: 1, unit: 'st' }),
-    knob('Output', 'fine', 'Fine', -100, 100, 0, { step: 1, unit: 'ct' }),
   ],
 };

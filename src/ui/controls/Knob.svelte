@@ -236,6 +236,8 @@
 
   .label {
     font-size: var(--text-xs);
+    line-height: 1.2;
+    white-space: nowrap;
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -249,6 +251,8 @@
 
   .value {
     font-size: var(--text-s);
+    line-height: 1.2;
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
     color: var(--ink);
   }

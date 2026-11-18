@@ -27,7 +27,7 @@
   /** The compact strip's width follows its container. */
   let stripWidth = $state(0);
   const W = $derived(compact ? Math.max(40, stripWidth - 10) : 168);
-  const H = $derived(compact ? 30 : 52);
+  const H = $derived(compact ? 24 : 48);
 
   const wave = $derived(compact ? null : waveShape(box));
   const envelope = $derived(envelopeShape(box, ids));
@@ -121,14 +121,14 @@
   /* As tall as a row of selectors, so the knobs below line up with the other sections'. */
   .screen.compact {
     justify-content: center;
-    height: 40px;
+    height: 32px;
     padding: 0 var(--space-1);
   }
 
+  /* Wave and envelope side by side (the screen sits above the synth's controls). */
   .screen {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-4);
     padding: var(--space-2) var(--space-3);
     border: 1px solid var(--screen-line-strong);
     background: var(--screen);

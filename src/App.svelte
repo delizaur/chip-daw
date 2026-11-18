@@ -113,7 +113,7 @@
   });
 </script>
 
-<div class="app" style:--bottom-height={session.bottomTab === 'pianoRoll' ? '380px' : '300px'}>
+<div class="app">
   <div class="top"><TopBar /></div>
   <div class="left"><LibraryPanel /></div>
   <div class="center"><Arrangement /></div>
@@ -126,7 +126,9 @@
     display: grid;
     height: 100%;
     grid-template-columns: 220px minmax(0, 1fr) 280px;
-    grid-template-rows: auto minmax(0, 1fr) var(--bottom-height);
+    /* The preset editor and the piano roll share one height: switching tabs doesn't move the
+       arrangement. */
+    grid-template-rows: auto minmax(0, 1fr) 380px;
     grid-template-areas:
       'top top top'
       'left center right'
