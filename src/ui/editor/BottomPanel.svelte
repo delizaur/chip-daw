@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
   import KeyboardView from '../keyboard/KeyboardView.svelte';
+  import { fit } from '../fit.svelte';
   import PianoRoll from '../piano-roll/PianoRoll.svelte';
   import { session } from '../state/session.svelte';
   import PresetEditor from './PresetEditor.svelte';
@@ -20,14 +21,15 @@
     resize = {
       pointerId: event.pointerId,
       startY: event.clientY,
-      startHeight: panel.getBoundingClientRect().height,
+      startHeight: panel.offsetHeight,
     };
   }
 
   function onpointermove(event: PointerEvent) {
     if (!resize || event.pointerId !== resize.pointerId) return;
     // Dragging up makes the panel taller.
-    session.setBottomHeight(resize.startHeight + resize.startY - event.clientY);
+    // Screen pixels to layout pixels (the app may be scaled down to fit a small screen).
+    session.setBottomHeight(resize.startHeight + (resize.startY - event.clientY) / fit.scale);
   }
 
   function onpointerup(event: PointerEvent) {
@@ -36,7 +38,7 @@
 
   function onkeydown(event: KeyboardEvent) {
     const step = event.shiftKey ? 64 : 16;
-    const current = panel?.getBoundingClientRect().height ?? session.bottomHeight;
+    const current = panel?.offsetHeight ?? session.bottomHeight;
     if (event.key === 'ArrowUp') session.setBottomHeight(current + step);
     else if (event.key === 'ArrowDown') session.setBottomHeight(current - step);
     else if (event.key === 'Home') session.setBottomHeight(BOTTOM_MIN_HEIGHT);

@@ -118,7 +118,7 @@ EOF
 
 Options: `--prod` (production build), `--url <url>` (drive an already-running server),
 `--out <dir>` (screenshot dir), `--scale 2` (high-DPI screenshots for inspecting details),
-`--mobile` (a phone in landscape, 915×360 with touch: checks the scaled-down phone layout).
+`--mobile` (a phone in landscape, 915×360 with touch: the app scales itself down to fit; `viewport 915 412` then mimics fullscreen, without the browser bars).
 
 Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Go to start`, `Play` (its
 name becomes `Pause` while playing), `Record`, `Overdub`, `Metronome`, `Zoom in`, `Zoom out`,

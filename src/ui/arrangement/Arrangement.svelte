@@ -19,6 +19,7 @@
     middle button   drag to scroll sideways
 -->
 <script lang="ts">
+  import { fit } from '../fit.svelte';
   import { untrack } from 'svelte';
   import { getParamDescriptor } from '../../model/boxes/registry';
   import { moveClips, resizeClip, setLoopRegion } from '../../model/commands';
@@ -145,7 +146,11 @@
 
   function point(event: MouseEvent) {
     const rect = canvas!.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    // Screen pixels to layout pixels (the app may be scaled down to fit a small screen).
+    return {
+      x: (event.clientX - rect.left) / fit.scale,
+      y: (event.clientY - rect.top) / fit.scale,
+    };
   }
 
   /** Snaps to the grid for the zoom, counted in the meter at `tick` (Alt: no snapping). */

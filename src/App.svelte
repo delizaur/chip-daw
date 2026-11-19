@@ -5,17 +5,17 @@
   import TopBar from './ui/layout/TopBar.svelte';
   import BottomPanel from './ui/editor/BottomPanel.svelte';
   import { installComputerKeyboard } from './ui/input/computer-keyboard';
+  import { fit } from './ui/fit.svelte';
   import { installKeymap, type KeyHandler } from './ui/keymap';
   import { setTrackMute, setTrackSolo } from './model/commands';
   import { libraryStore } from './ui/state/library.svelte';
   import { BOTTOM_MIN_HEIGHT, session } from './ui/state/session.svelte';
 
-  let windowHeight = $state(0);
   /** Room the top bar and the arrangement keep however tall the bottom panel is dragged. */
   const KEEP_ABOVE = 260;
   /** The bottom panel's height as shown: what was set, within what the window allows. */
   const bottomHeight = $derived(
-    Math.max(BOTTOM_MIN_HEIGHT, Math.min(session.bottomHeight, windowHeight - KEEP_ABOVE)),
+    Math.max(BOTTOM_MIN_HEIGHT, Math.min(session.bottomHeight, fit.height - KEEP_ABOVE)),
   );
 
   /**
@@ -185,10 +185,13 @@
   });
 </script>
 
-<svelte:window bind:innerHeight={windowHeight} />
-
+<!-- On small touch screens the app is laid out at desktop size and scaled down to fit (fit.svelte.ts). -->
 <div
   class="app"
+  class:scaled={fit.scale < 1}
+  style:width={fit.scale < 1 ? `${fit.width}px` : undefined}
+  style:height={fit.scale < 1 ? `${fit.height}px` : undefined}
+  style:transform={fit.scale < 1 ? `scale(${fit.scale})` : undefined}
   style:--bottom-height="{bottomHeight}px"
   style:--bottom-extra="{bottomHeight - BOTTOM_MIN_HEIGHT}px"
 >
@@ -203,6 +206,16 @@
   .app {
     display: grid;
     height: 100%;
+  }
+
+  .app.scaled {
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+  }
+
+  .app {
     grid-template-columns: 220px minmax(0, 1fr) 280px;
     /* The preset editor and the piano roll share one height (adjustable from the panel's top
        edge): switching tabs doesn't move the arrangement. */

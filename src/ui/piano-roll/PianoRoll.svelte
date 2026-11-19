@@ -15,6 +15,7 @@
   Alt while dragging disables snapping. Arrow keys (via the app keymap) transpose / move.
 -->
 <script lang="ts">
+  import { fit } from '../fit.svelte';
   import {
     boxesInOrder,
     defaultCurve,
@@ -240,7 +241,11 @@
 
   function point(event: MouseEvent) {
     const rect = canvas!.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    // Screen pixels to layout pixels (the app may be scaled down to fit a small screen).
+    return {
+      x: (event.clientX - rect.left) / fit.scale,
+      y: (event.clientY - rect.top) / fit.scale,
+    };
   }
 
   const snap = (tick: Tick, event: MouseEvent) =>

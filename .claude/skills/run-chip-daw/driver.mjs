@@ -10,7 +10,7 @@
  *   --url <url>    drive an already-running server instead of starting one
  *   --out <dir>    screenshot directory (default: tmp/run-chip-daw)
  *   --scale <n>    device pixel ratio for screenshots (default: 1; use 2 to inspect details)
- *   --mobile       emulate a phone in landscape (915×360, touch, viewport meta tag applied)
+ *   --mobile       emulate a phone in landscape (915×360, touch)
  *
  * The dev/preview server runs in-process on a free port and is closed on exit.
  * Browser: $CHROME_PATH, else installed Chrome, else installed Edge.

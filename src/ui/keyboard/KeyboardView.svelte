@@ -46,7 +46,7 @@
     const panel = root?.closest('.bottom-panel');
     if (!panel) return;
     const observer = new ResizeObserver(() => {
-      extra = Math.max(0, panel.getBoundingClientRect().height - BOTTOM_MIN_HEIGHT);
+      extra = Math.max(0, (panel as HTMLElement).offsetHeight - BOTTOM_MIN_HEIGHT);
     });
     observer.observe(panel);
     return () => observer.disconnect();
