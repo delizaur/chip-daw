@@ -252,16 +252,17 @@
     grid-area: bottom;
   }
 
-  /* Narrow screens (proper tablet layouts come in Phase 6): drop the library, slim the mixer. */
+  /* Narrow desktop windows (proper tablet layouts come in Phase 6): drop the library, slim
+     the mixer. Not on touch screens: there the app is laid out at desktop size and scaled. */
   @media (max-width: 900px) {
-    .app {
+    .app:not(.scaled) {
       grid-template-columns: minmax(0, 1fr) 240px;
       grid-template-areas:
         'top top'
         'center right'
         'bottom bottom';
     }
-    .left {
+    .app:not(.scaled) .left {
       display: none !important;
     }
   }
