@@ -2,7 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Phones and tablets lay the app out at desktop size and scale all of it down to fit
+         (small, but all of it shows) until the touch layouts of Phase 6: at least 1600 px wide
+         (the top bar) and, by the screen's shape, 760 px tall (the arrangement and the bottom
+         panel). Desktop browsers ignore this tag. -->
+    <meta name="viewport" content="width=1600" />
+    <script>
+      (function () {
+        var meta = document.querySelector('meta[name="viewport"]');
+        function fit() {
+          var width = Math.max(1600, Math.round((760 * innerWidth) / innerHeight));
+          var content = 'width=' + width;
+          if (meta.content !== content) meta.content = content;
+        }
+        fit();
+        addEventListener('resize', fit);
+      })();
+    </script>
     <meta name="theme-color" content="#0b0a0e" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>chip-daw</title>

@@ -117,7 +117,8 @@ EOF
 | `errors` | console errors/warnings, page errors and HTTP ≥400 so far, or `none` |
 
 Options: `--prod` (production build), `--url <url>` (drive an already-running server),
-`--out <dir>` (screenshot dir), `--scale 2` (high-DPI screenshots for inspecting details).
+`--out <dir>` (screenshot dir), `--scale 2` (high-DPI screenshots for inspecting details),
+`--mobile` (a phone in landscape, 915×360 with touch: checks the scaled-down phone layout).
 
 Useful names: buttons `Audio off · click to start`, `Undo`, `Redo`, `Go to start`, `Play` (its
 name becomes `Pause` while playing), `Record`, `Overdub`, `Metronome`, `Zoom in`, `Zoom out`,

@@ -10,6 +10,7 @@
  *   --url <url>    drive an already-running server instead of starting one
  *   --out <dir>    screenshot directory (default: tmp/run-chip-daw)
  *   --scale <n>    device pixel ratio for screenshots (default: 1; use 2 to inspect details)
+ *   --mobile       emulate a phone in landscape (915×360, touch, viewport meta tag applied)
  *
  * The dev/preview server runs in-process on a free port and is closed on exit.
  * Browser: $CHROME_PATH, else installed Chrome, else installed Edge.
@@ -1095,10 +1096,21 @@ const server = await startServer();
 const browser = await launchBrowser();
 let ok = true;
 try {
-  const context = await browser.newContext({
-    viewport: { width: 1440, height: 900 },
-    deviceScaleFactor: Number(option('--scale', '1')),
-  });
+  const context = await browser.newContext(
+    flag('--mobile')
+      ? // A phone in landscape, browser bars included (Pixel 7 sized): touch, and the page's
+        // viewport meta tag applies.
+        {
+          viewport: { width: 915, height: 360 },
+          deviceScaleFactor: 2.6,
+          isMobile: true,
+          hasTouch: true,
+        }
+      : {
+          viewport: { width: 1440, height: 900 },
+          deviceScaleFactor: Number(option('--scale', '1')),
+        },
+  );
   await context.grantPermissions(['midi', 'midi-sysex']);
   // A fake MIDI keyboard replaces Web MIDI: an automated browser doesn't receive messages from
   // real devices (verified with a real keyboard), so tests play through this instead (`midi`).
