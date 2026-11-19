@@ -9,6 +9,23 @@
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
   const mod = isMac ? '⌘' : 'Ctrl+';
 
+  // Fullscreen through the page (like a video player's) rather than the browser's F11: then
+  // Firefox doesn't slide its toolbar in, pushing everything down, when the mouse nears the top.
+  const canFullscreen = typeof document !== 'undefined' && document.fullscreenEnabled;
+  let fullscreen = $state(typeof document !== 'undefined' && !!document.fullscreenElement);
+  $effect(() => {
+    const update = () => (fullscreen = !!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', update);
+    return () => document.removeEventListener('fullscreenchange', update);
+  });
+
+  function toggleFullscreen() {
+    const request = document.fullscreenElement
+      ? document.exitFullscreen()
+      : document.documentElement.requestFullscreen();
+    request.catch(() => session.showNotice('The browser did not allow fullscreen.', 'error'));
+  }
+
   const audioText = $derived(
     {
       off: 'Audio off · click to start',
@@ -104,7 +121,7 @@
     aria-pressed={session.keyboardPiano}
     title={session.keyboardPiano
       ? 'Computer keyboard plays notes: A–; on the selected track, Z/X octave, C/V velocity. Click or press the key left of 1 to use letter keys as shortcuts.'
-      : 'Letter keys are shortcuts: R record, O overdub, M metronome, L loop, arrows select clips, A/D clip edges, Enter piano roll, U make unique, P use track preset, T load to track. Click or press the key left of 1 to play notes again.'}
+      : 'Letter keys are shortcuts: R record, O overdub, C metronome, L loop, M/S mute/solo, A/D clip edges, Enter piano roll, K keyboard view, I browse presets, U make unique, P use track preset, T load to track. Click or press the key left of 1 to play notes again.'}
     onclick={() => session.toggleKeyboardPiano()}
   >
     <span aria-hidden="true">⌨</span>
@@ -128,6 +145,27 @@
     oninput={(v) => session.run(setMasterVolume(v))}
     onend={() => session.commit()}
   />
+
+  {#if canFullscreen}
+    <button
+      type="button"
+      class="icon-button fullscreen"
+      aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+      aria-pressed={fullscreen}
+      title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
+      onclick={toggleFullscreen}
+    >
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        {#if fullscreen}
+          <!-- Corners pointing in. -->
+          <path d="M6 1v5H1M10 1v5h5M6 15v-5H1M10 15v-5h5" />
+        {:else}
+          <!-- Corners pointing out. -->
+          <path d="M1 6V1h5M15 6V1h-5M1 10v5h5M15 10v5h-5" />
+        {/if}
+      </svg>
+    </button>
+  {/if}
 </header>
 
 <style>
@@ -285,6 +323,19 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .fullscreen {
+    flex-shrink: 0;
+  }
+
+  .fullscreen svg {
+    display: block;
+    margin: auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: square;
   }
 
   .keys {
